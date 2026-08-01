@@ -131,16 +131,21 @@ async def search_fast(
     recency: str | None,
     provider_timeout: float | None = None,
 ) -> tuple[list[ProviderResult], str]:
-    """Yarış modu: tüm provider'lar paralel başlar, ilk dolu sonuç kazanır.
+    """Yarış modu: genel-web provider'ları paralel başlar, ilk dolu sonuç kazanır.
 
     Kazanan belirlenince kalan task'ler iptal edilir → tipik latency en hızlı
     provider kadar olur (parallel moddaki 'en yavaş' yerine).
+
+    Niche provider'lar (arxiv, github, x_*, meta_*) genel sorgularda yarışı
+    kazanıp alakasız sonuç dönmesin diye race'e alınmaz; yalnızca hiç genel-web
+    provider'ı yoksa tüm provider'larla yarışılır.
     """
-    if not providers:
+    candidates = [p for p in providers if p.general_web] or providers
+    if not candidates:
         return [], ""
     tasks = [
         asyncio.ensure_future(_execute_provider(p, query, max_results, recency, provider_timeout))
-        for p in providers
+        for p in candidates
     ]
     try:
         for fut in asyncio.as_completed(tasks):

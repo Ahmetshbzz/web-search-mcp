@@ -7,6 +7,7 @@ from web_search_mcp.providers.base import SearchProvider
 
 class GithubProvider(SearchProvider):
     name = "github"
+    general_web = False  # kod repo indeksi — genel sorgularda race'e girmez
 
     def available(self) -> bool:
         return True

@@ -6,6 +6,7 @@ from web_search_mcp.providers.base import SearchProvider
 
 class MetaDevProvider(SearchProvider):
     name = "meta_dev"
+    general_web = False  # Facebook/Instagram indeksi — genel sorgularda race'e girmez
 
     def available(self) -> bool:
         return True

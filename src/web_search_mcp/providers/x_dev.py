@@ -6,6 +6,7 @@ from web_search_mcp.providers.base import SearchProvider
 
 class XDevProvider(SearchProvider):
     name = "x_dev"
+    general_web = False  # X/Twitter indeksi — genel sorgularda race'e girmez
 
     def available(self) -> bool:
         return True

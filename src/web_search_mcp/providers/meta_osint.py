@@ -6,6 +6,7 @@ from web_search_mcp.providers.base import SearchProvider
 
 class MetaOsintProvider(SearchProvider):
     name = "meta_osint"
+    general_web = False  # Facebook/Instagram osint — genel sorgularda race'e girmez
 
     def available(self) -> bool:
         return True

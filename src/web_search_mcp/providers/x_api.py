@@ -7,6 +7,7 @@ from web_search_mcp.providers.base import SearchProvider
 
 class XApiProvider(SearchProvider):
     name = "x_api_v2"
+    general_web = False  # X/Twitter indeksi — genel sorgularda race'e girmez
 
     def available(self) -> bool:
         token = (

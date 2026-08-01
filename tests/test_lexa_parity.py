@@ -224,3 +224,30 @@ def test_chunk_relevant_text_no_match_takes_head():
     giant = "word " * 3000
     out = chunk_relevant_text(giant, "nonexistent", 300)
     assert len(out) <= 300
+
+
+class _SpecializedProvider(_StubProvider):
+    general_web = False
+
+
+@pytest.mark.asyncio
+async def test_search_fast_excludes_niche_providers():
+    # Niche provider aninda doner ama race'e alinmamali (dogfood bulgusu: arxiv vakasi)
+    niche = _SpecializedProvider("arxiv_like", delay=0.0)
+    general = _StubProvider("general", delay=0.05)
+
+    rows, name = await search_fast([niche, general], "q", 5, None)
+
+    assert name == "general"
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_search_fast_falls_back_when_all_niche():
+    # Hic genel-web provider yoksa niche'lerle yarismaya devam et
+    niche = _SpecializedProvider("arxiv_like", delay=0.01)
+
+    rows, name = await search_fast([niche], "q", 5, None)
+
+    assert name == "arxiv_like"
+    assert len(rows) == 1

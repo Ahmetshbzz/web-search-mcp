@@ -6,6 +6,7 @@ from web_search_mcp.providers.base import SearchProvider
 
 class XOsintProvider(SearchProvider):
     name = "x_osint"
+    general_web = False  # X/Twitter osint — genel sorgularda race'e girmez
 
     def available(self) -> bool:
         return True

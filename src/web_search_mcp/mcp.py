@@ -114,7 +114,8 @@ async def web_search(
     """Search the web with advanced filtering and extraction.
 
     mode: "parallel" (default, tüm provider'lar), "fallback" (sıralı),
-    "fast" (yarış — ilk dolu sonuç kazanır, en düşük gecikme).
+    "fast" (yarış — genel-web provider'ları arasında ilk dolu sonuç kazanır,
+    en düşük gecikme; niche kaynaklar için parallel/fallback kullan).
     """
     sources, provider = await get_service().search(
         query=query,
