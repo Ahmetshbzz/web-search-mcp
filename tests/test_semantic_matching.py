@@ -68,3 +68,19 @@ def test_rerank_abbreviation_beats_noise():
     ]
     reranked = hybrid_rrf_rerank(results, query="disable GIL")
     assert reranked[0].href == "https://b.com"
+
+
+def test_best_window_prefers_specific_version_region():
+    """go.dev dogfood senaryosu: sayfa basi 'go1.26.0' ile doluyken
+    'go1.26.5' sorgusu sayfanin sonundaki spesifik bolgeyi bulmali."""
+    from web_search_mcp.extractors import _best_window
+
+    top = "go1.26.0 (released 2026-02-10) major release notes. " * 30
+    mid = "filler unrelated content about something else entirely. " * 60
+    bottom = "go1.26.5 (released 2026-07-07) includes security fixes to crypto/tls. "
+    text = top + "\n\n" + mid + "\n\n" + bottom
+
+    out = _best_window(text, "go1.26.5 released security", 300)
+    assert "go1.26.5" in out
+    assert "2026-07-07" in out
+    assert "go1.26.0" not in out

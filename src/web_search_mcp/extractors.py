@@ -164,24 +164,47 @@ def extract_with_meta(
 def _best_window(text: str, query: str, max_chars: int) -> str:
     """Dev metin içinde sorguyla en yüksek subword benzerliğine sahip pencereyi bulur.
 
-    Kayar pencere + char n-gram taraması: "nogil" sorgusu "no-GIL" bölgesini,
-    "kitap" sorgusu "kitaplarımda" bölgesini yakalar (keyword find() kör kalırdı).
+    Kayar pencere + IDF ağırlıklı char n-gram taraması: dokümanda nadir geçen
+    sorgu n-gram'ları yüksek ağırlık alır. Aksi halde "go1.26" gibi yaygın
+    trigram'lar sayfanın her yerine yayılmışken spesifik bölgeyi ("go1.26.5")
+    boğar ve pencere sayfa başına kayar (go.dev dogfood bulgusu).
     """
     if len(text) <= max_chars:
         return text
 
-    q_ngrams = char_ngrams(" ".join(sorted(expand_query_terms(query))))
+    # Orijinal sorgu metni korunur: "go1.26.5" gibi tek token'lar parçalanmaz.
+    # Genişletme terimleri (kısaltma açılımları) ayrıca eklenir.
+    raw_words = set(re.findall(r"\w+", query.lower()))
+    q_ngrams = char_ngrams(query)
+    for term in expand_query_terms(query) - raw_words:
+        q_ngrams |= char_ngrams(term)
     if not q_ngrams:
         return text[:max_chars].rstrip()
 
+    # Nadirlik ağırlığı: n-gram dokümanda ne kadar az geçiyorsa o kadar değerli
+    lower_text = text.lower()
+    weights = {g: 1.0 / (1.0 + lower_text.count(g)) for g in q_ngrams}
+
     step = max(1, max_chars // 4)
-    best_score, best_start = -1, 0
+    best_score, best_start = -1.0, 0
     for start in range(0, len(text) - max_chars + 1, step):
-        overlap = len(q_ngrams & char_ngrams(text[start : start + max_chars]))
-        if overlap > best_score:
-            best_score, best_start = overlap, start
+        window_ngrams = char_ngrams(text[start : start + max_chars])
+        score = sum(weights[g] for g in window_ngrams & q_ngrams)
+        if score > best_score:
+            best_score, best_start = score, start
     if best_score <= 0:
         return text[:max_chars].rstrip()
+
+    # Pencereyi ilk kelime eşleşmesine yasla: sabit sınırlar eşleşmeyi ortadan
+    # kesebilir ("2026-07-07"nin "2026-07"de kırpılması gibi). Kaydır + kenetle.
+    window = text[best_start : best_start + max_chars].lower()
+    positions = [p for w in raw_words if (p := window.find(w)) != -1]
+    if positions:
+        anchor = best_start + min(positions)
+        start = max(0, anchor - max_chars // 4)
+        if start + max_chars > len(text):
+            start = max(0, len(text) - max_chars)
+        return text[start : start + max_chars].rstrip()
     return text[best_start : best_start + max_chars].rstrip()
 
 
