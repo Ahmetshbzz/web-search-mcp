@@ -11,10 +11,10 @@ from web_search_mcp.providers.brave import BraveProvider
 from web_search_mcp.providers.ddg import DdgProvider
 from web_search_mcp.providers.exa import ExaProvider
 from web_search_mcp.providers.github import GithubProvider
-from web_search_mcp.providers.meta_dev import MetaDevProvider
+from web_search_mcp.providers.meta_osint import MetaOsintProvider
 from web_search_mcp.providers.searxng import SearXNGProvider
 from web_search_mcp.providers.tavily import TavilyProvider
-from web_search_mcp.providers.x_dev import XDevProvider
+from web_search_mcp.providers.x_osint import XOsintProvider
 
 _logger = get_logger("providers")
 _breakers: dict[str, CircuitBreaker] = {}
@@ -34,8 +34,8 @@ def build_fallback_chain(settings: Settings, http: Http) -> list[SearchProvider]
         ExaProvider,
         ArxivProvider,
         GithubProvider,
-        XDevProvider,
-        MetaDevProvider,
+        XOsintProvider,
+        MetaOsintProvider,
         SearXNGProvider,
         DdgProvider,
     ):
@@ -115,8 +115,8 @@ __all__ = [
     "ExaProvider",
     "ArxivProvider",
     "GithubProvider",
-    "XDevProvider",
-    "MetaDevProvider",
+    "XOsintProvider",
+    "MetaOsintProvider",
     "build_fallback_chain",
     "search_with_fallback",
     "search_parallel",

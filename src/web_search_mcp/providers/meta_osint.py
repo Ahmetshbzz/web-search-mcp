@@ -1,0 +1,65 @@
+from urllib.parse import parse_qs, quote, urlparse
+
+from web_search_mcp.models import ProviderResult
+from web_search_mcp.providers.base import SearchProvider
+
+
+class MetaOsintProvider(SearchProvider):
+    name = "meta_osint"
+
+    def available(self) -> bool:
+        return True
+
+    async def search(
+        self, query: str, max_results: int, recency: str | None
+    ) -> list[ProviderResult]:
+        # Direct OSINT query targeting public Facebook and Instagram posts, pages, and profiles
+        clean_q = query.replace("site:facebook.com", "").replace("site:instagram.com", "").strip()
+        encoded = quote(f"(site:facebook.com OR site:instagram.com) {clean_q}")
+        url = f"https://html.duckduckgo.com/html/?q={encoded}"
+        headers = {"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        timeout = getattr(self.settings, "search_timeout", 10.0) if self.settings else 10.0
+
+        html = await self.http.get_text(url, headers=headers, request_timeout=timeout)
+        if not html:
+            return []
+
+        from lxml import html as lxml_html
+
+        results: list[ProviderResult] = []
+        try:
+            tree = lxml_html.fromstring(f"<html><body>{html}</body></html>")
+            xpath_expr = "//div[contains(@class, 'result') or contains(@class, 'result__body')]"
+            nodes = tree.xpath(xpath_expr)
+            for node in nodes:
+                a_tags = node.xpath(".//a[contains(@class, 'result__url')]") or node.xpath(".//a")
+                snippet_tags = node.xpath(".//*[contains(@class, 'snippet')]")
+                if a_tags:
+                    a = a_tags[0]
+                    raw_href = a.get("href", "")
+                    title = a.text_content().strip()
+                    snippet = snippet_tags[0].text_content().strip() if snippet_tags else ""
+
+                    target_url = raw_href
+                    if "uddg=" in raw_href:
+                        parsed = parse_qs(urlparse(raw_href).query)
+                        target_url = parsed.get("uddg", [raw_href])[0]
+
+                    if (
+                        target_url
+                        and any(d in target_url for d in ("facebook.com", "instagram.com"))
+                        and title
+                        and not any(r.href == target_url for r in results)
+                    ):
+                        platform = "Instagram" if "instagram.com" in target_url else "Facebook"
+                        results.append(
+                            ProviderResult(
+                                href=target_url,
+                                title=f"[{platform} Post/Profile] {title}",
+                                body=snippet,
+                            )
+                        )
+        except Exception:
+            pass
+
+        return results[:max_results]
