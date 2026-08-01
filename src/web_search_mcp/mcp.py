@@ -89,6 +89,29 @@ def _format_sources(sources: list[SearchHit], provider: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _format_sources_json(sources: list[SearchHit], provider: str, query: str) -> str:
+    """Deterministik citation haritalı yapısal çıktı: agent [S1] id'siyle referans
+    verip citations listesinden URL/başlık çözebilir."""
+    results = []
+    citations = []
+    for i, s in enumerate(sources, 1):
+        sid = f"S{i}"
+        results.append(
+            {
+                "id": sid,
+                "title": s.title or s.href,
+                "url": s.href,
+                "label": s.label,
+                "body": (s.body or "").strip(),
+            }
+        )
+        citations.append({"id": sid, "title": s.title or s.href, "url": s.href})
+    return json.dumps(
+        {"query": query, "provider": provider, "results": results, "citations": citations},
+        indent=2,
+    )
+
+
 @mcp.tool(
     name="web_search",
     title="Web Search",
@@ -110,12 +133,14 @@ async def web_search(
     mode: str | None = None,
     output_format: Literal["text", "markdown"] = "text",
     max_chars: int | None = None,
+    response_format: Literal["text", "json"] = "text",
 ) -> str:
     """Search the web with advanced filtering and extraction.
 
     mode: "parallel" (default, tüm provider'lar), "fallback" (sıralı),
     "fast" (yarış — genel-web provider'ları arasında ilk dolu sonuç kazanır,
     en düşük gecikme; niche kaynaklar için parallel/fallback kullan).
+    response_format: "json" → S1..Sn id'li yapısal sonuç + citation haritası.
     """
     sources, provider = await get_service().search(
         query=query,
@@ -130,6 +155,8 @@ async def web_search(
     )
     if not sources:
         return "No results found (or search providers unreachable)."
+    if response_format == "json":
+        return _format_sources_json(sources, provider, query)
     return _format_sources(sources, provider)
 
 
@@ -302,4 +329,30 @@ def prompt_tech_version_check(library: str) -> list[PromptMessage]:
 
 
 def main() -> None:
-    mcp.run(transport="stdio")
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser(prog="web-search-mcp")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default=os.environ.get("MCP_TRANSPORT", "stdio"),
+        help="Transport protocol (env: MCP_TRANSPORT). HTTP modları hosted kullanım içindir.",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("MCP_HOST", "127.0.0.1"),
+        help="HTTP transport bind adresi (env: MCP_HOST)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("MCP_PORT", "8000")),
+        help="HTTP transport portu (env: MCP_PORT)",
+    )
+    args = parser.parse_args()
+
+    if args.transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        mcp.run(transport=args.transport, host=args.host, port=args.port)
