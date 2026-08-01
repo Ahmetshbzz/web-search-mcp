@@ -10,7 +10,7 @@ SRC_SKILL = PROJECT_DIR / ".agents" / "skills" / SKILL_NAME / "SKILL.md"
 
 HOME = Path.home()
 
-TARGET_DIRS = [
+SKILL_TARGET_DIRS = [
     HOME / ".gemini" / "config" / "skills" / SKILL_NAME,
     HOME / ".claude" / "skills" / SKILL_NAME,
     HOME / ".cursor" / "skills" / SKILL_NAME,
@@ -20,10 +20,23 @@ TARGET_DIRS = [
     HOME / ".codex" / "skills" / SKILL_NAME,
 ]
 
-CLINE_SETTINGS_FILES = [
+MCP_SETTINGS_FILES = [
+    # Claude Code & Desktop
+    HOME / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json",
+    HOME / ".claude" / "mcp_settings.json",
+    HOME / ".claude" / "claude_desktop_config.json",
+    # Codex CLI
+    HOME / ".codex" / "mcp_settings.json",
+    HOME / ".codex" / "config.json",
+    # Cline & Roo-Cline
     HOME / "Library" / "Application Support" / "Code" / "User" / "globalStorage" / "saoudrizwan.claude-dev" / "settings" / "cline_mcp_settings.json",
+    HOME / "Library" / "Application Support" / "Code" / "User" / "globalStorage" / "rooveterinaryinc.roo-cline" / "settings" / "cline_mcp_settings.json",
     HOME / ".cline" / "mcp_settings.json",
     HOME / ".cline" / "data" / "mcp_settings.json",
+    HOME / ".roo-cline" / "mcp_settings.json",
+    # OpenCode & Gemini
+    HOME / ".opencode" / "mcp_settings.json",
+    HOME / ".gemini" / "mcp_config.json",
 ]
 
 
@@ -33,7 +46,7 @@ def install_skills():
         return
 
     print(f"Installing '{SKILL_NAME}' skill to all AI agent config roots...")
-    for target_dir in TARGET_DIRS:
+    for target_dir in SKILL_TARGET_DIRS:
         try:
             target_dir.mkdir(parents=True, exist_ok=True)
             target_file = target_dir / "SKILL.md"
@@ -43,7 +56,7 @@ def install_skills():
             print(f"  ✗ Could not install skill to {target_dir}: {exc}")
 
 
-def configure_cline_mcp():
+def configure_all_mcp_servers():
     uv_path = shutil.which("uv") or str(HOME / ".local" / "bin" / "uv")
     env_vars = {
         "BRAVE_API_KEY": os.environ.get("BRAVE_API_KEY", "BSAu4jRlnL2atlbTz2A6Wkt00GKfL3z"),
@@ -60,18 +73,19 @@ def configure_cline_mcp():
         "autoApprove": [],
     }
 
-    print("\nConfiguring 'web-search-mcp' in Cline MCP settings...")
-    for settings_file in CLINE_SETTINGS_FILES:
+    print("\nConfiguring 'web-search-mcp' across all AI agent platform settings...")
+    for settings_file in MCP_SETTINGS_FILES:
         try:
             settings_file.parent.mkdir(parents=True, exist_ok=True)
-            data = {"mcpServers": {}}
+            data = {}
             if settings_file.exists():
                 try:
                     data = json.loads(settings_file.read_text(encoding="utf-8"))
-                    if "mcpServers" not in data:
-                        data["mcpServers"] = {}
                 except Exception:
-                    data = {"mcpServers": {}}
+                    data = {}
+
+            if "mcpServers" not in data:
+                data["mcpServers"] = {}
 
             data["mcpServers"][SKILL_NAME] = mcp_config
             settings_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -82,5 +96,5 @@ def configure_cline_mcp():
 
 if __name__ == "__main__":
     install_skills()
-    configure_cline_mcp()
-    print("\nInstallation completed successfully!")
+    configure_all_mcp_servers()
+    print("\nAll Skill and MCP configurations completed successfully!")
