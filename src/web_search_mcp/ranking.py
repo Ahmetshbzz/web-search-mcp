@@ -1,5 +1,16 @@
-from web_search_mcp.models import EnrichedResult
-from web_search_mcp.urls import authority_score, hostname
+from web_search_mcp.models import EnrichedResult, ProviderResult
+from web_search_mcp.urls import authority_score, canonical_url, hostname
+
+
+def deduplicate_results(results: list[ProviderResult]) -> list[ProviderResult]:
+    seen: set[str] = set()
+    deduped: list[ProviderResult] = []
+    for r in results:
+        c_url = canonical_url(r.href)
+        if c_url not in seen:
+            seen.add(c_url)
+            deduped.append(r)
+    return deduped
 
 
 def rank_results(results: list[EnrichedResult], recency: str | None) -> list[EnrichedResult]:

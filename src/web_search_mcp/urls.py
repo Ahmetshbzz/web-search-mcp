@@ -20,6 +20,15 @@ def hostname(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def canonical_url(url: str) -> str:
+    parsed = urlparse(clean_url(url))
+    host = (parsed.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    path = parsed.path.rstrip("/")
+    return f"{parsed.scheme}://{host}{path}"
+
+
 def is_fetchable(url: str) -> bool:
     parsed = urlparse(url)
     return bool(
@@ -55,3 +64,20 @@ def authority_score(host: str) -> int:
     if h.endswith(".org"):
         score += 1
     return score
+
+
+def matches_domain_filter(
+    url: str,
+    include_domains: list[str] | None = None,
+    exclude_domains: list[str] | None = None,
+) -> bool:
+    host = hostname(url).lower()
+    if include_domains:
+        inc = [d.lower().strip().removeprefix("www.") for d in include_domains if d.strip()]
+        if inc and not any(host == d or host.endswith("." + d) for d in inc):
+            return False
+    if exclude_domains:
+        exc = [d.lower().strip().removeprefix("www.") for d in exclude_domains if d.strip()]
+        if any(host == d or host.endswith("." + d) for d in exc):
+            return False
+    return True

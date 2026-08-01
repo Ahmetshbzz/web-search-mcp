@@ -37,6 +37,25 @@ class Http:
             pass
         return None
 
+    async def get_bytes(self, url: str, request_timeout: float) -> bytes | None:
+        try:
+            resp = await self.client.get(url, timeout=request_timeout)
+            if resp.status_code == 200:
+                return resp.content
+        except Exception:
+            pass
+        return None
+
+    async def post_json(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        json_data: dict[str, object] | None = None,
+        timeout: float,
+    ) -> object:
+        return await self.get_json(url, headers=headers, json_body=json_data, request_timeout=timeout)
+
     async def get_json(
         self,
         url: str,
