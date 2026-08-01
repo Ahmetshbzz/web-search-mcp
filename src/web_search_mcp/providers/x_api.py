@@ -39,7 +39,11 @@ class XApiProvider(SearchProvider):
         }
         timeout = getattr(self.settings, "search_timeout", 10.0) if self.settings else 10.0
 
-        data = await self.http.get_json(url, headers=headers, request_timeout=timeout)
+        try:
+            data = await self.http.get_json(url, headers=headers, request_timeout=timeout)
+        except Exception:
+            return []
+
         if not data or not isinstance(data, dict):
             return []
 
