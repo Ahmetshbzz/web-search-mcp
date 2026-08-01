@@ -23,6 +23,7 @@ from web_search_mcp.providers import (
 from web_search_mcp.ranking import deduplicate_results, rank_results
 from web_search_mcp.text import truncate
 from web_search_mcp.urls import clean_url, hostname, is_fetchable, matches_domain_filter
+from web_search_mcp.vector_rerank import hybrid_rrf_rerank
 
 _logger = get_logger("service")
 
@@ -120,7 +121,13 @@ class WebSearchService:
                 )
             )
 
-        enriched = rank_results(enriched, recency)
+        if recency:
+            # Tazelik isteniyorsa tarih öncelikli sırala
+            enriched = rank_results(enriched, recency)
+        else:
+            # Aksi halde BM25 + RRF ile sorgu alakasına göre yeniden sırala
+            # (provider sırasına güvenmek yerine içerik sinyali kullanılır)
+            enriched = hybrid_rrf_rerank(enriched, query)
 
         hits: list[SearchHit] = []
         for item in enriched:
