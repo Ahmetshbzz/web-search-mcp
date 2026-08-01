@@ -48,7 +48,11 @@ def build_fallback_chain(settings: Settings, http: Http) -> list[SearchProvider]
 
 
 async def _execute_provider(
-    provider: SearchProvider, query: str, max_results: int, recency: str | None
+    provider: SearchProvider,
+    query: str,
+    max_results: int,
+    recency: str | None,
+    provider_timeout: float | None = None,
 ) -> tuple[list[ProviderResult], str]:
     cb = get_circuit_breaker(provider.name)
     if not cb.allow_execution():
@@ -56,7 +60,9 @@ async def _execute_provider(
         _logger.warning("Skipping provider due to open circuit breaker", provider=provider.name)
         return [], provider.name
     try:
-        rows = await provider.search(query, max_results, recency)
+        coro = provider.search(query, max_results, recency)
+        # Hard limit: yavaş/asılı provider tüm aramayı bloklayamaz (TimeoutError → failure)
+        rows = await (asyncio.wait_for(coro, provider_timeout) if provider_timeout else coro)
         if rows:
             cb.record_success()
             return rows, provider.name
@@ -77,21 +83,31 @@ async def _execute_provider(
 
 
 async def search_with_fallback(
-    providers: list[SearchProvider], query: str, max_results: int, recency: str | None
+    providers: list[SearchProvider],
+    query: str,
+    max_results: int,
+    recency: str | None,
+    provider_timeout: float | None = None,
 ) -> tuple[list[ProviderResult], str]:
     for provider in providers:
-        rows, name = await _execute_provider(provider, query, max_results, recency)
+        rows, name = await _execute_provider(
+            provider, query, max_results, recency, provider_timeout
+        )
         if rows:
             return rows, name
     return [], ""
 
 
 async def search_parallel(
-    providers: list[SearchProvider], query: str, max_results: int, recency: str | None
+    providers: list[SearchProvider],
+    query: str,
+    max_results: int,
+    recency: str | None,
+    provider_timeout: float | None = None,
 ) -> tuple[list[ProviderResult], str]:
     if not providers:
         return [], ""
-    tasks = [_execute_provider(p, query, max_results, recency) for p in providers]
+    tasks = [_execute_provider(p, query, max_results, recency, provider_timeout) for p in providers]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     all_rows: list[ProviderResult] = []
@@ -106,6 +122,37 @@ async def search_parallel(
 
     provider_name_str = "+".join(used_providers) if used_providers else ""
     return all_rows, provider_name_str
+
+
+async def search_fast(
+    providers: list[SearchProvider],
+    query: str,
+    max_results: int,
+    recency: str | None,
+    provider_timeout: float | None = None,
+) -> tuple[list[ProviderResult], str]:
+    """Yarış modu: tüm provider'lar paralel başlar, ilk dolu sonuç kazanır.
+
+    Kazanan belirlenince kalan task'ler iptal edilir → tipik latency en hızlı
+    provider kadar olur (parallel moddaki 'en yavaş' yerine).
+    """
+    if not providers:
+        return [], ""
+    tasks = [
+        asyncio.ensure_future(_execute_provider(p, query, max_results, recency, provider_timeout))
+        for p in providers
+    ]
+    try:
+        for fut in asyncio.as_completed(tasks):
+            rows, name = await fut
+            if rows:
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+                return rows, name
+        return [], ""
+    finally:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 __all__ = [
@@ -123,5 +170,6 @@ __all__ = [
     "build_fallback_chain",
     "search_with_fallback",
     "search_parallel",
+    "search_fast",
     "get_circuit_breaker",
 ]

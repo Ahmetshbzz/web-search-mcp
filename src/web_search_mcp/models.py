@@ -26,6 +26,7 @@ class SearchHit(BaseModel):
 
 
 class FetchPage(BaseModel):
-    status: Literal["ok", "unreachable", "empty", "blocked"]
+    status: Literal["ok", "unreachable", "empty", "blocked", "too_large", "binary"]
     text: str = ""
     date: str = ""
+    final_url: str = ""  # yönlendirme sonrası ulaşılan gerçek URL
