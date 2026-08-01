@@ -2,10 +2,12 @@ import math
 import re
 
 from web_search_mcp.models import EnrichedResult
+from web_search_mcp.similarity import expand_query_terms, ngram_similarity
 
 
 def compute_bm25_score(query: str, text: str, k1: float = 1.5, b: float = 0.75) -> float:
-    q_words = set(re.findall(r"\w+", query.lower()))
+    # Kısaltma genişletmeli kelime kümesi ("GIL" → "global interpreter lock")
+    q_words = expand_query_terms(query)
     if not q_words or not text.strip():
         return 0.0
 
@@ -31,11 +33,16 @@ def compute_bm25_score(query: str, text: str, k1: float = 1.5, b: float = 0.75) 
 def hybrid_rrf_rerank(
     results: list[EnrichedResult], query: str, rrf_k: int = 60
 ) -> list[EnrichedResult]:
-    """BM25 ve Tazelik (Recency) skorlarını RRF (Reciprocal Rank Fusion) ile birleştirir."""
+    """Leksikal (BM25) + subword (char n-gram) sıralarını RRF ile füzyonlar.
+
+    BM25 tam kelime eşleşmesinde güçlü; n-gram benzerliği morfoloji,
+    tire/alt-kelime ve kısaltma farklarını yakalar. RRF iki sıranın
+    konsensüsünü skora çevirir.
+    """
     if not results or not query.strip():
         return results
 
-    # Score 1: BM25 score
+    # Sıra 1: BM25 (kelime seviyesi, kısaltma genişletmeli)
     bm25_scored = [
         (idx, compute_bm25_score(query, f"{r.title} {r.snippet} {r.content}"))
         for idx, r in enumerate(results)
@@ -43,11 +50,20 @@ def hybrid_rrf_rerank(
     bm25_scored.sort(key=lambda x: x[1], reverse=True)
     bm25_ranks = {item[0]: rank for rank, item in enumerate(bm25_scored, 1)}
 
-    # RRF Score calculation
+    # Sıra 2: char n-gram benzerliği (subword seviyesi)
+    ngram_scored = [
+        (idx, ngram_similarity(query, f"{r.title} {r.snippet} {r.content[:2000]}"))
+        for idx, r in enumerate(results)
+    ]
+    ngram_scored.sort(key=lambda x: x[1], reverse=True)
+    ngram_ranks = {item[0]: rank for rank, item in enumerate(ngram_scored, 1)}
+
+    # RRF füzyonu
     rrf_scores: list[tuple[int, float]] = []
     for idx in range(len(results)):
-        rank_bm25 = bm25_ranks.get(idx, len(results))
-        score = 1.0 / (rrf_k + rank_bm25)
+        score = (1.0 / (rrf_k + bm25_ranks.get(idx, len(results)))) + (
+            1.0 / (rrf_k + ngram_ranks.get(idx, len(results)))
+        )
         rrf_scores.append((idx, score))
 
     rrf_scores.sort(key=lambda x: x[1], reverse=True)

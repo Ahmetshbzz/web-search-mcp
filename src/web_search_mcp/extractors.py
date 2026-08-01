@@ -7,6 +7,8 @@ import html2text
 import pypdf
 import trafilatura
 
+from web_search_mcp.similarity import char_ngrams, expand_query_terms, ngram_similarity
+
 
 def clean_extract(html: str) -> str:
     """Sayfanın ana içeriğini temiz metne çıkarır (trafilatura → lxml → regex fallback)."""
@@ -159,28 +161,39 @@ def extract_with_meta(
     return text, date
 
 
-def _best_window(text: str, query_words: set[str], max_chars: int) -> str:
-    """Dev metin içinde sorgu kelimelerinin ilk geçtiği bölgeyi pencereler."""
+def _best_window(text: str, query: str, max_chars: int) -> str:
+    """Dev metin içinde sorguyla en yüksek subword benzerliğine sahip pencereyi bulur.
+
+    Kayar pencere + char n-gram taraması: "nogil" sorgusu "no-GIL" bölgesini,
+    "kitap" sorgusu "kitaplarımda" bölgesini yakalar (keyword find() kör kalırdı).
+    """
     if len(text) <= max_chars:
         return text
-    lower = text.lower()
-    best_pos = -1
-    for w in query_words:
-        pos = lower.find(w)
-        if pos != -1 and (best_pos == -1 or pos < best_pos):
-            best_pos = pos
-    if best_pos == -1:
+
+    q_ngrams = char_ngrams(" ".join(sorted(expand_query_terms(query))))
+    if not q_ngrams:
         return text[:max_chars].rstrip()
-    start = max(0, best_pos - max_chars // 3)  # bağlam için biraz geriden başla
-    return text[start : start + max_chars].rstrip()
+
+    step = max(1, max_chars // 4)
+    best_score, best_start = -1, 0
+    for start in range(0, len(text) - max_chars + 1, step):
+        overlap = len(q_ngrams & char_ngrams(text[start : start + max_chars]))
+        if overlap > best_score:
+            best_score, best_start = overlap, start
+    if best_score <= 0:
+        return text[:max_chars].rstrip()
+    return text[best_start : best_start + max_chars].rstrip()
 
 
 def chunk_relevant_text(text: str, query: str, max_chars: int) -> str:
-    """Metni paragraflara bölüp sorgu kelimelerine göre skorlar ve en alakalı kısımları döndürür."""
+    """Metni paragraflara bölüp sorguyla alakasına göre skorlar; en alakalı kısımları döndürür.
+
+    Skor = kelime overlap (kısaltma genişletmeli) + subword n-gram benzerliği.
+    """
     if len(text) <= max_chars or not query.strip():
         return text[:max_chars]
 
-    query_words = set(re.findall(r"\w+", query.lower()))
+    query_words = expand_query_terms(query)
     if not query_words:
         return text[:max_chars]
 
@@ -192,8 +205,9 @@ def chunk_relevant_text(text: str, query: str, max_chars: int) -> str:
     for idx, p in enumerate(paragraphs):
         p_words = set(re.findall(r"\w+", p.lower()))
         overlap = len(query_words.intersection(p_words))
-        score = overlap / (len(p_words) ** 0.1 + 1.0)
-        scored_paragraphs.append((score, idx, p))
+        lex_score = overlap / (len(p_words) ** 0.1 + 1.0)
+        sub_score = ngram_similarity(query, p)
+        scored_paragraphs.append((lex_score + 0.5 * sub_score, idx, p))
 
     # En yüksek skorluları seç, ancak orijinal sırasını koru
     scored_paragraphs.sort(key=lambda x: x[0], reverse=True)
@@ -207,7 +221,7 @@ def chunk_relevant_text(text: str, query: str, max_chars: int) -> str:
                 break
             # Tek dev paragraf (trafilatura çıktısı tipik): sorgu bölgesini
             # pencereler, aksi halde max_chars hiç uygulanmaz → token kaçağı.
-            return _best_window(p, query_words, remaining)
+            return _best_window(p, query, remaining)
         selected.append((idx, p))
         current_length += len(p) + 2
 

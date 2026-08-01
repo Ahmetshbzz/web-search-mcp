@@ -59,17 +59,19 @@ def get_browser_render_engine() -> BrowserRenderEngine:
 
 mcp = MCPServer(
     name="web-search",
-    version="3.1.0",
+    version="3.2.0",
     instructions=(
         "Web search & intelligence server with multi-provider aggregation "
         "(Brave, Tavily, Exa, ArXiv, GitHub, SearXNG, DDG) in parallel/fallback/fast-race "
-        "modes, Chrome TLS fingerprinting, query-aware content chunking for token-efficient "
-        "fetching, markdown-first content negotiation, HTTPS upgrade, cross-host redirect "
-        "reporting, 10MB streaming size caps, binary detection, autonomous multi-hop deep "
-        "research, structured JSON data extraction, headless browser rendering "
-        "(Playwright/Shadow DOM/Network), site discovery (robots.txt, sitemap.xml, "
-        "llms.txt), local OCR canvas extraction, Markdown/PDF extraction, and two-tier "
-        "caching (in-memory LRU + SQLite)."
+        "modes, Chrome TLS fingerprinting, subword-aware (char n-gram + abbreviation "
+        "expansion) relevance matching and hybrid BM25/RRF reranking, query-aware content "
+        "chunking for token-efficient fetching, markdown-first content negotiation, HTTPS "
+        "upgrade, cross-host redirect reporting, 10MB streaming size caps, binary "
+        "detection, autonomous multi-hop deep research with reformulation hops, structured "
+        "JSON citations, headless browser rendering (Playwright/Shadow DOM/Network), site "
+        "discovery (robots.txt, sitemap.xml, llms.txt), local OCR canvas extraction, "
+        "Markdown/PDF extraction, two-tier caching (in-memory LRU + SQLite), and optional "
+        "SSE/streamable-HTTP transports."
     ),
 )
 
