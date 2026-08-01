@@ -6,6 +6,7 @@ from mcp.types import PromptMessage, TextContent, ToolAnnotations
 
 from web_search_mcp.browser_render import BrowserRenderEngine
 from web_search_mcp.config import get_settings
+from web_search_mcp.extractors import chunk_relevant_text
 from web_search_mcp.models import SearchHit
 from web_search_mcp.research import DeepResearchEngine
 from web_search_mcp.service import WebSearchService
@@ -58,14 +59,17 @@ def get_browser_render_engine() -> BrowserRenderEngine:
 
 mcp = MCPServer(
     name="web-search",
-    version="3.0.0",
+    version="3.1.0",
     instructions=(
-        "Web search & intelligence server with multi-provider parallel aggregation "
-        "(Brave, Tavily, Exa, ArXiv, GitHub, SearXNG, DDG), Chrome TLS fingerprinting, "
-        "autonomous multi-hop deep research, structured JSON data extraction, headless "
-        "browser rendering (Playwright/Shadow DOM/Network), site discovery (robots.txt, "
-        "sitemap.xml, llms.txt), local OCR canvas extraction, Markdown/PDF extraction, "
-        "and SQLite caching."
+        "Web search & intelligence server with multi-provider aggregation "
+        "(Brave, Tavily, Exa, ArXiv, GitHub, SearXNG, DDG) in parallel/fallback/fast-race "
+        "modes, Chrome TLS fingerprinting, query-aware content chunking for token-efficient "
+        "fetching, markdown-first content negotiation, HTTPS upgrade, cross-host redirect "
+        "reporting, 10MB streaming size caps, binary detection, autonomous multi-hop deep "
+        "research, structured JSON data extraction, headless browser rendering "
+        "(Playwright/Shadow DOM/Network), site discovery (robots.txt, sitemap.xml, "
+        "llms.txt), local OCR canvas extraction, Markdown/PDF extraction, and two-tier "
+        "caching (in-memory LRU + SQLite)."
     ),
 )
 
@@ -81,6 +85,7 @@ def _format_sources(sources: list[SearchHit], provider: str) -> str:
         if body:
             lines.append(f"    {body}")
         lines.append("")
+    lines.append("Note: cite the sources above as markdown links [title](url) in your response.")
     return "\n".join(lines).strip()
 
 
@@ -104,8 +109,13 @@ async def web_search(
     exclude_domains: list[str] | None = None,
     mode: str | None = None,
     output_format: Literal["text", "markdown"] = "text",
+    max_chars: int | None = None,
 ) -> str:
-    """Search the web with advanced filtering and extraction."""
+    """Search the web with advanced filtering and extraction.
+
+    mode: "parallel" (default, tüm provider'lar), "fallback" (sıralı),
+    "fast" (yarış — ilk dolu sonuç kazanır, en düşük gecikme).
+    """
     sources, provider = await get_service().search(
         query=query,
         max_results=max_results,
@@ -115,6 +125,7 @@ async def web_search(
         exclude_domains=exclude_domains,
         mode=mode,
         output_format=output_format,
+        max_content_chars=max_chars,
     )
     if not sources:
         return "No results found (or search providers unreachable)."
@@ -131,8 +142,17 @@ async def web_search(
         readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
     ),
 )
-async def web_fetch(url: str, output_format: Literal["text", "markdown"] = "text") -> str:
-    """Fetch one URL and extract its main content (text or markdown)."""
+async def web_fetch(
+    url: str,
+    output_format: Literal["text", "markdown"] = "text",
+    query: str | None = None,
+    max_chars: int | None = None,
+) -> str:
+    """Fetch one URL and extract its main content (text or markdown).
+
+    query verilirse sayfanın yalnızca sorguyla ilgili bölümleri döner (token tasarrufu).
+    max_chars ile döndürülen içerik uzunluğu sınırlanabilir.
+    """
     page = await get_service().fetch(url, output_format=output_format)
     if page.status == "blocked":
         return f"Blocked or invalid URL: {url} (only public http/https URLs are allowed)"
@@ -140,8 +160,23 @@ async def web_fetch(url: str, output_format: Literal["text", "markdown"] = "text
         return f"Could not fetch: {url}"
     if page.status == "empty":
         return f"Fetched but no readable content found: {url}"
+    if page.status == "too_large":
+        limit_mb = get_settings().fetch_max_bytes // (1024 * 1024)
+        return f"Content exceeds the {limit_mb} MB size limit: {url}"
+    if page.status == "binary":
+        return f"URL serves binary content that cannot be extracted as text: {url}"
+
     header = f"Source: {hostname(url)}" + (f" · {page.date}" if page.date else "")
-    return f"{header}\n\n{truncate(page.text, get_settings().max_content_chars)}"
+    # Cross-host redirect bildirimi (Lexa parity)
+    if page.final_url and hostname(page.final_url) != hostname(url):
+        header += f" (redirected to {hostname(page.final_url)})"
+
+    limit = max_chars or get_settings().max_content_chars
+    if query and query.strip():
+        body = chunk_relevant_text(page.text, query, limit)
+    else:
+        body = truncate(page.text, limit)
+    return f"{header}\n\n{body}"
 
 
 @mcp.tool(

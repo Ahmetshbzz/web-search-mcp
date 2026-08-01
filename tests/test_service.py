@@ -1,5 +1,6 @@
 from web_search_mcp.cache import MemoryTTLCache
 from web_search_mcp.config import Settings
+from web_search_mcp.http import DocumentResult
 from web_search_mcp.service import WebSearchService
 
 PAYLOAD = {
@@ -22,8 +23,15 @@ class FakeHttp:
         self.get_json_calls += 1
         return self._payload
 
-    async def get_text(self, url: str, request_timeout: float) -> str | None:
-        return "<html><body><p>hello content</p></body></html>"
+    async def get_document(
+        self, url: str, request_timeout: float, **kwargs: object
+    ) -> DocumentResult:
+        return DocumentResult(
+            content="<html><body><p>hello content</p></body></html>",
+            final_url=url,
+            content_type="text/html",
+            status_code=200,
+        )
 
 
 def _service(http: FakeHttp) -> WebSearchService:

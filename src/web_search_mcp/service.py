@@ -1,5 +1,7 @@
 import asyncio
-from typing import Literal
+import time
+from collections import OrderedDict
+from typing import Literal, NamedTuple
 
 from web_search_mcp.cache import SQLiteTTLCache, TTLCache
 from web_search_mcp.config import RECENCY_OPTIONS, Settings, get_settings
@@ -14,6 +16,7 @@ from web_search_mcp.models import EnrichedResult, FetchPage, ProviderResult, Sea
 from web_search_mcp.observability import get_logger
 from web_search_mcp.providers import (
     build_fallback_chain,
+    search_fast,
     search_parallel,
     search_with_fallback,
 )
@@ -22,6 +25,17 @@ from web_search_mcp.text import truncate
 from web_search_mcp.urls import clean_url, hostname, is_fetchable, matches_domain_filter
 
 _logger = get_logger("service")
+
+_PAGE_MEM_MAX = 64  # SQLite önündeki in-memory LRU kapasitesi
+
+
+class PageContent(NamedTuple):
+    """_get_page_content sonucu. kind: ok | empty | too_large | binary"""
+
+    text: str
+    date: str
+    final_url: str
+    kind: str
 
 
 class WebSearchService:
@@ -35,6 +49,8 @@ class WebSearchService:
         self.http = http or Http(self.settings)
         self.cache = cache or SQLiteTTLCache(self.settings.cache_db_path)
         self._providers = build_fallback_chain(self.settings, self.http)
+        # In-memory LRU: warm hit'te SQLite + JSON parse maliyeti sıfırlanır
+        self._page_mem: OrderedDict[str, tuple[float, tuple[str, str, str]]] = OrderedDict()
 
     async def search(
         self,
@@ -46,6 +62,7 @@ class WebSearchService:
         exclude_domains: list[str] | None = None,
         mode: str | None = None,
         output_format: Literal["text", "markdown"] = "text",
+        max_content_chars: int | None = None,
     ) -> tuple[list[SearchHit], str]:
         query = (query or "").strip()
         if not query:
@@ -54,6 +71,7 @@ class WebSearchService:
         recency = recency if recency in RECENCY_OPTIONS else None
         fetch_top = self.settings.fetch_top_pages if fetch_pages else 0
         search_mode = mode or self.settings.search_mode
+        content_limit = max_content_chars or self.settings.max_content_chars
 
         results, provider = await self._cached_provider_results(
             query, max_results, recency, search_mode
@@ -71,31 +89,26 @@ class WebSearchService:
         results = deduplicate_results(results)
 
         top = results[:fetch_top]
-        pages: list[str | bytes | None] = [None] * len(top)
-        try:
-            pages = await asyncio.gather(
-                *[
-                    self._fetch_raw_content(r.href)
-                    if is_fetchable(r.href)
-                    else asyncio.sleep(0, result=None)
-                    for r in top
-                ]
-            )
-        except Exception:
-            _logger.debug("page fetch failed", exc_info=True)
+        pages: list[PageContent | None] = await asyncio.gather(
+            *[
+                self._get_page_content(r.href, output_format, self.settings.fetch_timeout)
+                if is_fetchable(r.href)
+                else asyncio.sleep(0, result=None)
+                for r in top
+            ],
+            return_exceptions=True,
+        )
 
         enriched: list[EnrichedResult] = []
-        for result, content_raw in zip(top, pages, strict=False):
+        for result, page in zip(top, pages, strict=False):
             page_text, page_date = "", ""
-            if isinstance(content_raw, bytes):
-                page_text = extract_pdf(content_raw)
-            elif isinstance(content_raw, str) and content_raw:
-                page_text, page_date = extract_with_meta(
-                    content_raw, result.href, output_format=output_format
-                )
+            if isinstance(page, Exception):
+                _logger.debug("page fetch failed for %s", result.href, exc_info=page)
+            elif page is not None and page.kind == "ok":
+                page_text, page_date = page.text, page.date
 
             if page_text:
-                page_text = chunk_relevant_text(page_text, query, self.settings.max_content_chars)
+                page_text = chunk_relevant_text(page_text, query, content_limit)
 
             enriched.append(
                 EnrichedResult(
@@ -122,7 +135,7 @@ class WebSearchService:
                 SearchHit(
                     title=item.title,
                     href=item.href,
-                    body=truncate(body, self.settings.max_content_chars),
+                    body=truncate(body, content_limit),
                     label=label,
                 )
             )
@@ -131,7 +144,7 @@ class WebSearchService:
                 SearchHit(
                     title=result.title,
                     href=result.href,
-                    body=truncate(result.body, self.settings.max_content_chars),
+                    body=truncate(result.body, content_limit),
                 )
             )
         return hits, provider
@@ -140,46 +153,113 @@ class WebSearchService:
         self, url: str, output_format: Literal["text", "markdown"] = "text"
     ) -> FetchPage:
         url = clean_url(url.strip())
+        # HTTPS upgrade (Lexa parity): http:// verildiyse https:// dene
+        if url.startswith("http://"):
+            url = "https://" + url[len("http://") :]
         if not is_fetchable(url):
             return FetchPage(status="blocked")
 
-        if url.lower().endswith(".pdf"):
-            pdf_bytes = await self.http.get_bytes(url, self.settings.page_timeout)
-            if not pdf_bytes:
-                return FetchPage(status="unreachable")
-            pdf_text = extract_pdf(pdf_bytes)
-            if not pdf_text:
-                return FetchPage(status="empty")
-            return FetchPage(status="ok", text=pdf_text)
-
-        html = await self.http.get_text(url, self.settings.page_timeout)
-        if not html:
+        page = await self._get_page_content(url, output_format, self.settings.page_timeout)
+        if page is None:
             return FetchPage(status="unreachable")
-        text, date = extract_with_meta(html, url, output_format=output_format)
-        if not text:
-            return FetchPage(status="empty")
-        return FetchPage(status="ok", text=text, date=date)
+        if page.kind != "ok":
+            return FetchPage(status=page.kind, final_url=page.final_url)  # type: ignore[arg-type]
+        return FetchPage(status="ok", text=page.text, date=page.date, final_url=page.final_url)
 
-    async def _fetch_raw_content(self, url: str) -> str | bytes | None:
-        if url.lower().endswith(".pdf"):
-            return await self.http.get_bytes(url, self.settings.fetch_timeout)
-        return await self.http.get_text(url, self.settings.fetch_timeout)
+    def _mem_get(self, key: str) -> PageContent | None:
+        item = self._page_mem.get(key)
+        if item is None:
+            return None
+        expires_at, (text, date, final_url) = item
+        if time.time() > expires_at:
+            del self._page_mem[key]
+            return None
+        self._page_mem.move_to_end(key)
+        return PageContent(text, date, final_url, "ok")
+
+    def _mem_set(self, key: str, value: tuple[str, str, str]) -> None:
+        expires_at = time.time() + self.settings.page_cache_ttl_seconds
+        self._page_mem[key] = (expires_at, value)
+        self._page_mem.move_to_end(key)
+        while len(self._page_mem) > _PAGE_MEM_MAX:
+            self._page_mem.popitem(last=False)
+
+    async def _get_page_content(
+        self, url: str, output_format: Literal["text", "markdown"], request_timeout: float
+    ) -> PageContent | None:
+        """Sayfa içeriğini (metin, tarih, final URL, tür) döndürür; sonuçlar cache'lenir.
+
+        None → sayfaya ulaşılamadı. kind="empty" → ulaşıldı ama içerik çıkarılamadı.
+        Cache katmanları: in-memory LRU → SQLite → HTTP (streaming, boyut sınırlı).
+        """
+        is_pdf = url.lower().endswith(".pdf")
+        cache_key = f"pdf::{url}" if is_pdf else f"page::{output_format}::{url}"
+
+        mem = self._mem_get(cache_key)
+        if mem is not None:
+            return mem
+
+        cached = await self.cache.get(cache_key)
+        if isinstance(cached, (list, tuple)) and len(cached) >= 2:
+            text, date = str(cached[0]), str(cached[1])
+            final_url = str(cached[2]) if len(cached) > 2 else ""
+            self._mem_set(cache_key, (text, date, final_url))
+            return PageContent(text, date, final_url, "ok")
+
+        doc = await self.http.get_document(
+            url, request_timeout, max_bytes=self.settings.fetch_max_bytes
+        )
+        if doc is None or (doc.content is None and not doc.too_large):
+            return None
+        if doc.too_large:
+            return PageContent("", "", doc.final_url, "too_large")
+
+        raw = doc.content
+        ct = (doc.content_type or "").lower()
+        if isinstance(raw, bytes):
+            if is_pdf or "pdf" in ct:
+                text, date = extract_pdf(raw), ""
+            else:
+                return PageContent("", "", doc.final_url, "binary")
+        elif "markdown" in ct or ct.startswith("text/plain"):
+            # Sunucu zaten markdown/düz metin verdi → extraction atlanır (token + hız)
+            text, date = raw.strip(), ""
+        else:
+            text, date = extract_with_meta(raw, url, output_format=output_format)
+
+        if not text:
+            return PageContent("", date, doc.final_url, "empty")
+
+        self._mem_set(cache_key, (text, date, doc.final_url))
+        await self.cache.set(
+            cache_key, [text, date, doc.final_url], self.settings.page_cache_ttl_seconds
+        )
+        return PageContent(text, date, doc.final_url, "ok")
 
     async def _cached_provider_results(
         self, query: str, max_results: int, recency: str | None, search_mode: str
     ) -> tuple[list[ProviderResult], str]:
-        key = f"{query}|{max_results}|{recency or ''}|{search_mode}"
+        # Normalize: "AsyncIO  internals" ile "asyncio internals" aynı cache girişine düşer.
+        normalized_query = " ".join(query.casefold().split())
+        key = f"search::{normalized_query}|{max_results}|{recency or ''}|{search_mode}"
         cached = await self.cache.get(key)
         if cached is not None and isinstance(cached, (list, tuple)) and len(cached) == 2:
             raw_results, provider = cached
             results = [ProviderResult.model_validate(r) for r in raw_results]
             return results, provider
 
+        p_timeout = self.settings.provider_timeout
         if search_mode == "parallel":
-            results, provider = await search_parallel(self._providers, query, max_results, recency)
+            results, provider = await search_parallel(
+                self._providers, query, max_results, recency, p_timeout
+            )
+        elif search_mode == "fast":
+            results, provider = await search_fast(
+                self._providers, query, max_results, recency, p_timeout
+            )
         else:
             results, provider = await search_with_fallback(
-                self._providers, query, max_results, recency
+                self._providers, query, max_results, recency, p_timeout
             )
 
         serializable_results = [r.model_dump() for r in results]
