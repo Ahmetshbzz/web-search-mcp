@@ -57,6 +57,67 @@ def extract_pdf(data_bytes: bytes) -> str:
         return ""
 
 
+def extract_contacts_and_socials(html: str) -> dict[str, list[str]]:
+    """HTML içerisinden WhatsApp, telefon, e-posta ve sosyal medya bağlantılarını çıkarır."""
+    if not html:
+        return {}
+
+    contacts: dict[str, list[str]] = {
+        "whatsapp": [],
+        "phone": [],
+        "email": [],
+        "telegram": [],
+        "socials": [],
+    }
+
+    # WhatsApp links/numbers
+    wa_matches = re.findall(
+        r"(?:wa\.me/|api\.whatsapp\.com/send\?phone=|whatsapp://send\?phone=)(\+?\d+)",
+        html,
+        re.IGNORECASE,
+    )
+    for num in wa_matches:
+        formatted = "+" + num.lstrip("+")
+        if formatted not in contacts["whatsapp"]:
+            contacts["whatsapp"].append(formatted)
+
+    # Tel hrefs
+    tel_matches = re.findall(r'href=["\']tel:([^"\']+)["\']', html, re.IGNORECASE)
+    for tel in tel_matches:
+        t_clean = re.sub(r"[^\d+]", "", tel)
+        if t_clean and t_clean not in contacts["phone"]:
+            contacts["phone"].append(t_clean)
+
+    # Mailto hrefs
+    mail_matches = re.findall(r'href=["\']mailto:([^"\']+)["\']', html, re.IGNORECASE)
+    for mail in mail_matches:
+        m_clean = mail.split("?")[0].strip()
+        if m_clean and m_clean not in contacts["email"]:
+            contacts["email"].append(m_clean)
+
+    # Telegram
+    tg_matches = re.findall(
+        r'href=["\'](https?://(?:t|telegram)\.me/[^"\']+)["\']', html, re.IGNORECASE
+    )
+    for tg in tg_matches:
+        if tg not in contacts["telegram"]:
+            contacts["telegram"].append(tg)
+
+    # Socials
+    social_patterns = [
+        r'href=["\'](https?://(?:www\.)?github\.com/[^"\']+)["\']',
+        r'href=["\'](https?://(?:www\.)?linkedin\.com/in/[^"\']+)["\']',
+        r'href=["\'](https?://(?:www\.)?(?:twitter|x)\.com/[^"\']+)["\']',
+        r'href=["\'](https?://(?:www\.)?instagram\.com/[^"\']+)["\']',
+    ]
+    for pattern in social_patterns:
+        for match in re.findall(pattern, html, re.IGNORECASE):
+            if match not in contacts["socials"]:
+                contacts["socials"].append(match)
+
+    return {k: v for k, v in contacts.items() if v}
+
+
 def extract_with_meta(
     html: str, url: str = "", output_format: Literal["text", "markdown"] = "text"
 ) -> tuple[str, str]:
@@ -79,6 +140,23 @@ def extract_with_meta(
         pass
 
     text = clean_extract_markdown(html) if output_format == "markdown" else clean_extract(html)
+
+    # Append discovered contact and action links (WhatsApp, Phone, Email, Telegram, Socials)
+    contacts = extract_contacts_and_socials(html)
+    if contacts:
+        contact_lines = ["\n\n### Discovered Contacts & Action Links:"]
+        if "whatsapp" in contacts:
+            contact_lines.append(f"- **WhatsApp:** {', '.join(contacts['whatsapp'])}")
+        if "phone" in contacts:
+            contact_lines.append(f"- **Phone:** {', '.join(contacts['phone'])}")
+        if "email" in contacts:
+            contact_lines.append(f"- **Email:** {', '.join(contacts['email'])}")
+        if "telegram" in contacts:
+            contact_lines.append(f"- **Telegram:** {', '.join(contacts['telegram'])}")
+        if "socials" in contacts:
+            contact_lines.append(f"- **Socials:** {', '.join(contacts['socials'])}")
+        text += "\n".join(contact_lines)
+
     return text, date
 
 

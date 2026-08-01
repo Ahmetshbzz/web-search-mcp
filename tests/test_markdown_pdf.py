@@ -36,3 +36,21 @@ def test_chunk_relevant_text():
     )
     chunked = chunk_relevant_text(text, query="Go release", max_chars=100)
     assert "Go 1.26" in chunked
+
+
+def test_extract_contacts_and_socials():
+    from web_search_mcp.extractors import extract_contacts_and_socials
+
+    html = """
+    <html>
+      <body>
+        <a href="https://wa.me/905551234567">WhatsApp Support</a>
+        <a href="mailto:contact@example.com">Email Us</a>
+        <a href="tel:+905559876543">Call Us</a>
+      </body>
+    </html>
+    """
+    contacts = extract_contacts_and_socials(html)
+    assert "+905551234567" in contacts["whatsapp"]
+    assert "contact@example.com" in contacts["email"]
+    assert "+905559876543" in contacts["phone"]
