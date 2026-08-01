@@ -5,10 +5,12 @@ from web_search_mcp.config import Settings
 from web_search_mcp.http import Http
 from web_search_mcp.models import ProviderResult
 from web_search_mcp.observability import get_logger
+from web_search_mcp.providers.arxiv import ArxivProvider
 from web_search_mcp.providers.base import SearchProvider
 from web_search_mcp.providers.brave import BraveProvider
 from web_search_mcp.providers.ddg import DdgProvider
 from web_search_mcp.providers.exa import ExaProvider
+from web_search_mcp.providers.github import GithubProvider
 from web_search_mcp.providers.searxng import SearXNGProvider
 from web_search_mcp.providers.tavily import TavilyProvider
 
@@ -24,7 +26,15 @@ def get_circuit_breaker(provider_name: str) -> CircuitBreaker:
 
 def build_fallback_chain(settings: Settings, http: Http) -> list[SearchProvider]:
     chain: list[SearchProvider] = []
-    for cls in (BraveProvider, TavilyProvider, ExaProvider, SearXNGProvider, DdgProvider):
+    for cls in (
+        BraveProvider,
+        TavilyProvider,
+        ExaProvider,
+        ArxivProvider,
+        GithubProvider,
+        SearXNGProvider,
+        DdgProvider,
+    ):
         provider = cls(settings, http)
         if provider.available():
             chain.append(provider)
@@ -51,7 +61,11 @@ async def _execute_provider(
         cb.record_failure()
         # pyrefly: ignore [unexpected-keyword]
         _logger.debug(
-            "Provider failed during search execution", provider=provider.name, exc_info=True
+            # pyrefly: ignore [unexpected-keyword]
+            "Provider failed during search execution",
+            # pyrefly: ignore [unexpected-keyword]
+            provider=provider.name,
+            exc_info=True,
         )
         return [], provider.name
 
@@ -95,6 +109,8 @@ __all__ = [
     "DdgProvider",
     "SearXNGProvider",
     "ExaProvider",
+    "ArxivProvider",
+    "GithubProvider",
     "build_fallback_chain",
     "search_with_fallback",
     "search_parallel",

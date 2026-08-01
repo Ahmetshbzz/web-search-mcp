@@ -60,7 +60,7 @@ def test_chain_ddg_only_without_keys():
         Settings(brave_api_key="", tavily_api_key="", exa_api_key="", searxng_base_url=""),
         FakeHttp(None),
     )
-    assert [p.name for p in chain] == ["ddg"]
+    assert [p.name for p in chain] == ["arxiv", "github", "ddg"]
 
 
 def test_chain_priority_with_keys():
@@ -73,7 +73,15 @@ def test_chain_priority_with_keys():
         ),
         FakeHttp(None),
     )
-    assert [p.name for p in chain] == ["brave", "tavily", "exa", "searxng", "ddg"]
+    assert [p.name for p in chain] == [
+        "brave",
+        "tavily",
+        "exa",
+        "arxiv",
+        "github",
+        "searxng",
+        "ddg",
+    ]
 
 
 class FailProvider:

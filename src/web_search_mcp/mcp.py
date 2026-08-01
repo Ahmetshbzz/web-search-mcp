@@ -58,12 +58,13 @@ def get_browser_render_engine() -> BrowserRenderEngine:
 
 mcp = MCPServer(
     name="web-search",
-    version="2.2.0",
+    version="3.0.0",
     instructions=(
-        "Web search & intelligence server with multi-provider parallel aggregation, "
-        "Chrome TLS fingerprinting, autonomous multi-hop deep research, structured "
-        "JSON data extraction, headless browser rendering (Playwright/Shadow DOM/Network), "
-        "site discovery (robots.txt, sitemap.xml, llms.txt), Markdown/PDF extraction, "
+        "Web search & intelligence server with multi-provider parallel aggregation "
+        "(Brave, Tavily, Exa, ArXiv, GitHub, SearXNG, DDG), Chrome TLS fingerprinting, "
+        "autonomous multi-hop deep research, structured JSON data extraction, headless "
+        "browser rendering (Playwright/Shadow DOM/Network), site discovery (robots.txt, "
+        "sitemap.xml, llms.txt), local OCR canvas extraction, Markdown/PDF extraction, "
         "and SQLite caching."
     ),
 )
