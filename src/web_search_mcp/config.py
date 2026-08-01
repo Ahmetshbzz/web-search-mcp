@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     brave_api_key: str = ""
     tavily_api_key: str = ""
     exa_api_key: str = ""
+    x_bearer_token: str = ""
     searxng_base_url: str = ""
     search_mode: str = "parallel"  # "parallel" or "fallback"
     cache_db_path: str = "data/cache.db"

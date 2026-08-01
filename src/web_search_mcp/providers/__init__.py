@@ -14,6 +14,7 @@ from web_search_mcp.providers.github import GithubProvider
 from web_search_mcp.providers.meta_osint import MetaOsintProvider
 from web_search_mcp.providers.searxng import SearXNGProvider
 from web_search_mcp.providers.tavily import TavilyProvider
+from web_search_mcp.providers.x_api import XApiProvider
 from web_search_mcp.providers.x_osint import XOsintProvider
 
 _logger = get_logger("providers")
@@ -32,6 +33,7 @@ def build_fallback_chain(settings: Settings, http: Http) -> list[SearchProvider]
         BraveProvider,
         TavilyProvider,
         ExaProvider,
+        XApiProvider,
         ArxivProvider,
         GithubProvider,
         XOsintProvider,
@@ -115,6 +117,7 @@ __all__ = [
     "ExaProvider",
     "ArxivProvider",
     "GithubProvider",
+    "XApiProvider",
     "XOsintProvider",
     "MetaOsintProvider",
     "build_fallback_chain",
