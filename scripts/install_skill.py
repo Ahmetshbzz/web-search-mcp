@@ -13,6 +13,7 @@ TARGET_DIRS = [
     HOME / ".claude" / "skills" / SKILL_NAME,
     HOME / ".cursor" / "skills" / SKILL_NAME,
     HOME / ".cline" / "skills" / SKILL_NAME,
+    HOME / ".roo-cline" / "skills" / SKILL_NAME,
     HOME / ".opencode" / "skills" / SKILL_NAME,
     HOME / ".codex" / "skills" / SKILL_NAME,
 ]
