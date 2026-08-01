@@ -8,6 +8,7 @@ from web_search_mcp.config import get_settings
 from web_search_mcp.models import SearchHit
 from web_search_mcp.research import DeepResearchEngine
 from web_search_mcp.service import WebSearchService
+from web_search_mcp.site_discovery import SiteDiscoveryEngine
 from web_search_mcp.structured import StructuredExtractor
 from web_search_mcp.text import truncate
 from web_search_mcp.urls import hostname
@@ -15,6 +16,7 @@ from web_search_mcp.urls import hostname
 _service: WebSearchService | None = None
 _research_engine: DeepResearchEngine | None = None
 _structured_extractor: StructuredExtractor | None = None
+_site_discovery_engine: SiteDiscoveryEngine | None = None
 
 
 def get_service() -> WebSearchService:
@@ -38,13 +40,21 @@ def get_structured_extractor() -> StructuredExtractor:
     return _structured_extractor
 
 
+def get_site_discovery_engine() -> SiteDiscoveryEngine:
+    global _site_discovery_engine
+    if _site_discovery_engine is None:
+        _site_discovery_engine = SiteDiscoveryEngine(get_service().http)
+    return _site_discovery_engine
+
+
 mcp = MCPServer(
     name="web-search",
-    version="2.0.0",
+    version="2.1.0",
     instructions=(
         "Web search & intelligence server with multi-provider parallel aggregation, "
         "Chrome TLS fingerprinting, autonomous multi-hop deep research, structured "
-        "JSON data extraction, Markdown/PDF extraction, and SQLite caching."
+        "JSON data extraction, site discovery (robots.txt, sitemap.xml, llms.txt), "
+        "Markdown/PDF extraction, and SQLite caching."
     ),
 )
 
@@ -124,6 +134,22 @@ async def web_fetch(url: str, output_format: Literal["text", "markdown"] = "text
 
 
 @mcp.tool(
+    name="web_discover_site",
+    title="Site Metadata & LLM Discovery",
+    description=(
+        "Discover and analyze a site's robots.txt, sitemap.xml, and llms.txt / llm.txt files."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
+    ),
+)
+async def web_discover_site(url_or_domain: str) -> str:
+    """Discover site metadata: robots.txt, sitemap.xml, and llms.txt."""
+    data = await get_site_discovery_engine().discover(url_or_domain)
+    return json.dumps(data, indent=2)
+
+
+@mcp.tool(
     name="web_deep_research",
     title="Web Deep Research Engine",
     description=(
@@ -185,9 +211,7 @@ def prompt_deep_research(topic: str) -> list[PromptMessage]:
     ]
 
 
-@mcp.prompt(
-    name="tech-version-check", description="Check current versions of software or libraries."
-)
+@mcp.prompt(name="tech-version-check", description="Check current software release versions.")
 def prompt_tech_version_check(library: str) -> list[PromptMessage]:
     return [
         PromptMessage(

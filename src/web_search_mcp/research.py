@@ -23,8 +23,7 @@ class DeepResearchEngine:
         if not topic:
             return "Please provide a valid research topic."
 
-        # pyrefly: ignore [unexpected-keyword]
-        _logger.info("Starting deep research execution", topic=topic, depth=depth)
+        _logger.info("Starting deep research execution for topic '%s' (depth: %s)", topic, depth)
 
         # Step 1: Formulate sub-queries
         sub_queries = [
