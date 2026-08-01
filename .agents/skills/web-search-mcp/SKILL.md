@@ -1,61 +1,46 @@
 ---
 name: web-search-mcp
-description: Senior, production-grade operating instructions and tool selection rules for the web-search-mcp web intelligence engine (web_search, web_fetch, web_discover_site, web_render_page, web_deep_research, web_extract_structured). Encodes optimal tool routing, live social media profile DOM rendering rules, llms-full.txt discovery, and fallback resilience patterns for any AI agent.
+description: Routing and operating rules for the web-search-mcp web intelligence engine. Use when a task needs live web data — searching (web/news/videos/images), reading pages, rendering JS-driven or social-profile pages, deep multi-hop research, structured field extraction, or site/llms.txt discovery — including tool selection, token-efficiency, and result-status fallback decisions. Applies to any agent connected to the web-search MCP server.
 ---
 
-# Web Search MCP — Senior Agent Operating Standard
+# Web Search MCP — Routing & Operating Rules
 
-Operate as a principal web intelligence engineer and search tool orchestrator. Your objective when executing web search, extraction, or research tasks is to select the exact right tool for the task, preserve token efficiency, and avoid stale or misordered data.
+Pick the right tool by task class, keep token spend low, and react correctly to result statuses. Tools stay silent: never name them to the user; report findings, not machinery.
 
-## Tool Selection & Decision Boundaries
+## Tool routing by task class
 
-| Task Pattern / Objective | Target Tool | Core Principle & Technical Rationale |
+| Task class | Tool | Decision boundary |
 | :--- | :--- | :--- |
-| **Strict Chronological Social Profile Timeline** (`x.com/@user`, `linkedin.com/in/*`, `instagram.com/*`, `facebook.com/*`) | `web_render_page` | **MANDATORY:** Search engines (`web_search`) rank posts by relevance and viral engagement, NOT timeline order. `web_render_page` uses Playwright headless Chromium to execute JavaScript, render the live DOM, and extract exact current posts in chronological order. |
-| **Multi-Engine Parallel Web Query** | `web_search` | Runs parallel search across Brave, Tavily, Exa, Arxiv, GitHub, X OSINT, and DDG with Reciprocal Rank Fusion (RRF) reranking and deduplication. |
-| **Recursive Multi-Hop Investigation** | `web_deep_research` | Autonomous multi-query research agent for exhaustive, complex research topics. |
-| **Typed JSON Schema Extraction** | `web_extract_structured` | Extracts structured JSON conforming to a Pydantic/Zod schema directly from web pages. |
-| **Site Entry & LLM Index Discovery** | `web_discover_site` | Discovers `robots.txt`, `sitemap.xml`, `llms.txt`, and single-file `llms-full.txt` documentation paths. |
-| **Single Page Content Reading** | `web_fetch` | Converts static/HTML content to markdown using Chrome TLS impersonation (`curl_cffi`). |
+| Current or changing facts (versions, prices, releases, news) | `web_search` with `recency` | If you already reliably know the answer, answer directly. For anything dated, you don't know it — search. |
+| Single quick answer, latency-sensitive | `web_search` `mode="fast"` | Races general-web providers; niche sources (papers, repos, social) are excluded from the race — use `parallel` when those matter. |
+| Broad multi-source coverage | `web_search` `mode="parallel"` (default) | Merges all providers with dedup and relevance rerank; costs more time and API calls than `fast`. |
+| News-like queries | `web_search` `recency="day"` or `"week"` | A news endpoint fires alongside web results; freshest first. |
+| Videos or images | `web_search_media` | Media endpoints, not page search — don't use for text answers. |
+| One specific page | `web_fetch` | On long pages pass `query` and `max_chars` to get the relevant window instead of the whole document. |
+| Live social profile timelines ("latest posts") | `web_render_page` | Search engines rank by engagement, not chronology — for timeline order, render the live DOM. Static pages don't need rendering. |
+| Exhaustive multi-hop topic | `web_deep_research` | Expensive (many searches and fetches). Not for single-fact questions. |
+| Official docs / API sites | `web_discover_site` first | If `llms.txt` / `llms-full.txt` exists, fetch it instead of crawling pages. |
+| Named/typed fields from a page | `web_extract_structured` | Use when fields are required, not prose. |
 
----
+## Token budgeting
 
-## Operating Principles (Apply to Every Execution)
+- Start narrow: small `max_results` and `fetch_pages=false` for link scouting; widen only when insufficient.
+- When the question is specific, always pass `query` on `web_fetch` — the server returns the matching window, not the full page.
+- `response_format="json"` returns stable `S1..Sn` citation ids; use it when results feed further programmatic steps, plain text otherwise.
 
-1. **Social Media Timeline Invariant:** When requested to check a user's *latest* posts or profile feed (e.g. "Check @username's latest posts on X"), **never rely on `web_search` alone**. Always invoke `web_render_page(url="https://x.com/<username>")` to render the live DOM tree.
-2. **Silent & Deliberate Execution:** Call tools without narrating tool names to the end user. Present clean, synthesized findings.
-3. **LLM Index First for Documentation:** When investigating official APIs or documentation sites, invoke `web_discover_site` first to check for `llms-full.txt` or `llms.txt`.
-4. **Token Efficiency & Budgeting:** Prefer `web_search` with compact `max_results` before triggering expensive recursive research.
+## Result statuses — how to react
 
----
+- `blocked` → private/invalid URL; don't retry, pick another source.
+- `unreachable` → site down or bot throttling; retry once, or try `web_render_page`.
+- `empty` → page fetched but no readable text; try `web_render_page` for JS-heavy sites.
+- `too_large` → over the size cap; re-fetch with a narrower `query`.
+- `binary` → non-text payload; don't parse as text.
+- 429 / transient provider errors → retry once, then proceed with what you have.
 
-## Tool Reference & Signature Guide
+## Operating rules
 
-### 1. `web_render_page` (Headless Chromium)
-Executes client-side JavaScript, renders Shadow DOM, and intercepts network XHR responses.
-```json
-{
-  "url": "https://x.com/<username>",
-  "wait_until": "domcontentloaded",
-  "capture_network": true,
-  "extract_shadow_dom": true
-}
-```
+1. Cite sources as markdown links from the returned list; never invent URLs.
+2. Trust the date metadata in results over your own memory; when no date exists, say freshness is unverified instead of guessing.
+3. Batch independent tool calls in one turn; serialize only when one call's input depends on another's output.
+4. Bound your own loop: if two searches didn't move the answer forward, synthesize what you have and state what's missing.
 
-### 2. `web_search` (Parallel Multi-Engine Search)
-Performs hybrid reciprocal rank fusion across active search providers.
-```json
-{
-  "query": "<search_query>",
-  "max_results": 5,
-  "output_format": "markdown"
-}
-```
-
-### 3. `web_discover_site` (Site Intelligence & LLM Indexing)
-Inspects sitemaps, robots.txt, and AI documentation indexes.
-```json
-{
-  "domain_or_url": "<domain_name>"
-}
-```
