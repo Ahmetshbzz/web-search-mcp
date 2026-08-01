@@ -59,6 +59,34 @@ class DeepResearchEngine:
                     visited_urls.add(hit.href)
                     all_hits.append(hit)
 
+        # Step 2.5: Reformulation hop — birincil bulgulardaki baskın terimlerle
+        # sorguları zenginleştirip ikinci bir arama turu yap (model-içi döngünün
+        # lokal taklidi: sonuçlar yeni sorguları besler)
+        if depth > 1 and all_hits:
+            refined_queries = self._refine_queries(topic, all_hits)
+            if refined_queries:
+                refined_results = await asyncio.gather(
+                    *[
+                        self.service.search(
+                            query=q,
+                            max_results=max_pages_per_hop,
+                            fetch_pages=True,
+                            output_format="markdown",
+                        )
+                        for q in refined_queries
+                    ],
+                    return_exceptions=True,
+                )
+                for res in refined_results:
+                    if isinstance(res, Exception):
+                        _logger.debug("refined sub-query search failed", exc_info=res)
+                        continue
+                    hits, _ = res
+                    for hit in hits:
+                        if hit.href not in visited_urls:
+                            visited_urls.add(hit.href)
+                            all_hits.append(hit)
+
         # Step 3: Secondary hop - top hit'lerden çıkan sub-link'ler paralel fetch edilir
         secondary_hits: list[SearchHit] = []
         if depth > 1 and all_hits:
@@ -92,6 +120,85 @@ class DeepResearchEngine:
 
         # Step 4: Synthesize Research Dossier
         return self._format_research_dossier(topic, all_hits, secondary_hits)
+
+    # Sorgu zenginleştirmede elenen yaygın kelimeler (EN + TR)
+    _STOPWORDS = frozenset(
+        {
+            "with",
+            "from",
+            "that",
+            "this",
+            "what",
+            "how",
+            "why",
+            "when",
+            "where",
+            "which",
+            "will",
+            "would",
+            "could",
+            "should",
+            "have",
+            "has",
+            "had",
+            "are",
+            "was",
+            "were",
+            "been",
+            "being",
+            "into",
+            "about",
+            "over",
+            "after",
+            "before",
+            "between",
+            "through",
+            "using",
+            "used",
+            "use",
+            "and",
+            "the",
+            "for",
+            "not",
+            "you",
+            "your",
+            "its",
+            "our",
+            "their",
+            "ile",
+            "için",
+            "bir",
+            "ve",
+            "olan",
+            "gibi",
+            "daha",
+            "kadar",
+        }
+    )
+
+    @classmethod
+    def _refine_queries(cls, topic: str, hits: list[SearchHit], max_queries: int = 2) -> list[str]:
+        """Birincil hit'lerin başlık/içeriklerindeki baskın terimlerden yeni
+        sorgular türetir (reformulation hop)."""
+        topic_words = {w.lower() for w in re.findall(r"\w+", topic)}
+        freq: dict[str, int] = {}
+        for hit in hits[:6]:
+            text = f"{hit.title} {(hit.body or '')[:200]}"
+            for word in re.findall(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9_-]{2,}", text.lower()):
+                if word in cls._STOPWORDS or word in topic_words:
+                    continue
+                freq[word] = freq.get(word, 0) + 1
+
+        top_terms = [w for w, _ in sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))]
+        if len(top_terms) < 2:
+            return []
+
+        queries: list[str] = []
+        for i in range(0, min(len(top_terms), max_queries * 2), 2):
+            pair = top_terms[i : i + 2]
+            if len(pair) == 2:
+                queries.append(f"{topic} {pair[0]} {pair[1]}")
+        return queries[:max_queries]
 
     @staticmethod
     def _extract_sub_links(hits: list[SearchHit]) -> list[str]:
