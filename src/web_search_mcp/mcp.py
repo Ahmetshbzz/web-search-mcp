@@ -59,14 +59,15 @@ def get_browser_render_engine() -> BrowserRenderEngine:
 
 mcp = MCPServer(
     name="web-search",
-    version="3.2.0",
+    version="3.3.0",
     instructions=(
         "Web search & intelligence server with multi-provider aggregation "
         "(Brave, Tavily, Exa, ArXiv, GitHub, SearXNG, DDG) in parallel/fallback/fast-race "
-        "modes, Chrome TLS fingerprinting, subword-aware (char n-gram + abbreviation "
-        "expansion) relevance matching and hybrid BM25/RRF reranking, query-aware content "
-        "chunking for token-efficient fetching, markdown-first content negotiation, HTTPS "
-        "upgrade, cross-host redirect reporting, 10MB streaming size caps, binary "
+        "modes, Brave news/videos/images media search, Chrome TLS fingerprinting, "
+        "subword-aware (char n-gram + abbreviation expansion) relevance matching and "
+        "hybrid BM25/RRF reranking, query-aware content chunking for token-efficient "
+        "fetching, markdown-first content negotiation, HTTPS upgrade with plain-http "
+        "fallback, cross-host redirect reporting, 10MB streaming size caps, binary "
         "detection, autonomous multi-hop deep research with reformulation hops, structured "
         "JSON citations, headless browser rendering (Playwright/Shadow DOM/Network), site "
         "discovery (robots.txt, sitemap.xml, llms.txt), local OCR canvas extraction, "
@@ -160,6 +161,29 @@ async def web_search(
     if response_format == "json":
         return _format_sources_json(sources, provider, query)
     return _format_sources(sources, provider)
+
+
+@mcp.tool(
+    name="web_search_media",
+    title="Brave Video & Image Search",
+    description=(
+        "Search videos or images via Brave's media endpoints (paid plan feature). "
+        "Returns video links with durations or image page links with direct image URLs."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
+    ),
+)
+async def web_search_media(
+    query: str,
+    media_type: Literal["videos", "images"] = "videos",
+    max_results: int = 8,
+) -> str:
+    """Search videos or images on Brave."""
+    hits, provider = await get_service().search_media(media_type, query, max_results)
+    if not hits:
+        return "No media results found (Brave API key with media plan required)."
+    return _format_sources(hits, provider)
 
 
 @mcp.tool(

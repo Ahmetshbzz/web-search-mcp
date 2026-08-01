@@ -35,6 +35,37 @@ class _BraveNewsResponse(BaseModel):
     results: list[_BraveItem] = []
 
 
+class _BraveVideoItem(BaseModel):
+    title: str = ""
+    url: str = ""
+    description: str = ""
+    age: str = ""
+    page_age: str = ""
+    duration: str = ""
+
+
+class _BraveVideosResponse(BaseModel):
+    results: list[_BraveVideoItem] = []
+
+
+class _BraveImageProperties(BaseModel):
+    url: str = ""
+    width: int = 0
+    height: int = 0
+
+
+class _BraveImageItem(BaseModel):
+    title: str = ""
+    url: str = ""
+    source: str = ""
+    page_age: str = ""
+    properties: _BraveImageProperties = _BraveImageProperties()
+
+
+class _BraveImagesResponse(BaseModel):
+    results: list[_BraveImageItem] = []
+
+
 class BraveProvider(SearchProvider):
     name = "brave"
 
@@ -95,6 +126,50 @@ class BraveProvider(SearchProvider):
         )
         response = _BraveNewsResponse.model_validate(data)
         return [self._to_result(item) for item in response.results]
+
+    async def search_media(self, media_type: str, query: str, count: int) -> list[ProviderResult]:
+        """Brave video/görsel endpoint'leri (paid plan). body alanında:
+        videos → açıklama, images → direkt görsel URL'i; date alanında meta."""
+        params: dict[str, object] = {"q": query, "count": count}
+        headers = {"X-Subscription-Token": self._api_key, "Accept": "application/json"}
+        if media_type == "videos":
+            data = await self.http.get_json(
+                "https://api.search.brave.com/res/v1/videos/search",
+                params=params,
+                headers=headers,
+                request_timeout=self.settings.search_timeout,
+            )
+            response = _BraveVideosResponse.model_validate(data)
+            return [
+                ProviderResult(
+                    title=i.title,
+                    href=i.url,
+                    body=re.sub(r"<[^>]+>", "", i.description),
+                    date=i.duration or normalize_date(i.page_age or i.age),
+                )
+                for i in response.results
+            ]
+        if media_type == "images":
+            data = await self.http.get_json(
+                "https://api.search.brave.com/res/v1/images/search",
+                params=params,
+                headers=headers,
+                request_timeout=self.settings.search_timeout,
+            )
+            response = _BraveImagesResponse.model_validate(data)
+            out: list[ProviderResult] = []
+            for i in response.results:
+                dims = f"{i.properties.width}x{i.properties.height}" if i.properties.width else ""
+                out.append(
+                    ProviderResult(
+                        title=i.title or i.source,
+                        href=i.url,
+                        body=i.properties.url,  # direkt görsel URL'i
+                        date=dims or normalize_date(i.page_age),
+                    )
+                )
+            return out
+        raise ValueError(f"unknown media type: {media_type}")
 
     @staticmethod
     def _to_result(item: _BraveItem) -> ProviderResult:

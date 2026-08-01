@@ -156,6 +156,29 @@ class WebSearchService:
             )
         return hits, provider
 
+    async def search_media(
+        self, media_type: str, query: str, max_results: int = 8
+    ) -> tuple[list[SearchHit], str]:
+        """Brave video/görsel araması (paid plan). Brave yoksa boş döner."""
+        query = (query or "").strip()
+        if not query:
+            return [], ""
+        brave = next((p for p in self._providers if p.name == "brave"), None)
+        if brave is None or not hasattr(brave, "search_media"):
+            return [], ""
+        count = max(1, min(int(max_results), self.settings.max_provider_results))
+        rows = await brave.search_media(media_type, query, count)  # type: ignore[attr-defined]
+        hits = [
+            SearchHit(
+                title=r.title,
+                href=r.href,
+                body=truncate(r.body, self.settings.max_content_chars),
+                label=r.date,
+            )
+            for r in rows[:count]
+        ]
+        return hits, "brave"
+
     async def fetch(
         self, url: str, output_format: Literal["text", "markdown"] = "text"
     ) -> FetchPage:

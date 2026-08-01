@@ -180,3 +180,77 @@ async def test_brave_news_failure_falls_back_to_web():
     rows = await provider.search("q", max_results=5, recency="day")
 
     assert [r.title for r in rows] == ["Web Result"]
+
+
+class _BraveMediaHttp:
+    def __init__(self):
+        self.urls: list[str] = []
+
+    async def get_json(self, url: str, **kwargs: object) -> object:
+        self.urls.append(url)
+        if "videos/search" in url:
+            return {
+                "results": [
+                    {
+                        "title": "Cool Video",
+                        "url": "https://youtube.com/watch?v=1",
+                        "description": "d",
+                        "duration": "10:24",
+                    }
+                ]
+            }
+        if "images/search" in url:
+            return {
+                "results": [
+                    {
+                        "title": "Cat pic",
+                        "url": "https://site.com/cats",
+                        "source": "site.com",
+                        "properties": {
+                            "url": "https://img.com/cat.jpg",
+                            "width": 800,
+                            "height": 600,
+                        },
+                    }
+                ]
+            }
+        return {"web": {"results": []}}
+
+
+async def test_brave_search_videos():
+    from web_search_mcp.cache import MemoryTTLCache
+    from web_search_mcp.service import WebSearchService
+
+    http = _BraveMediaHttp()
+    svc = WebSearchService(Settings(brave_api_key="k"), http=http, cache=MemoryTTLCache())  # type: ignore[arg-type]
+    hits, provider = await svc.search_media("videos", "q", max_results=5)
+
+    assert provider == "brave"
+    assert any("videos/search" in u for u in http.urls)
+    assert hits[0].title == "Cool Video"
+    assert hits[0].label == "10:24"
+
+
+async def test_brave_search_images():
+    from web_search_mcp.cache import MemoryTTLCache
+    from web_search_mcp.service import WebSearchService
+
+    http = _BraveMediaHttp()
+    svc = WebSearchService(Settings(brave_api_key="k"), http=http, cache=MemoryTTLCache())  # type: ignore[arg-type]
+    hits, _ = await svc.search_media("images", "q", max_results=5)
+
+    assert hits[0].body == "https://img.com/cat.jpg"  # direkt görsel URL'i
+    assert hits[0].label == "800x600"
+
+
+async def test_search_media_without_brave():
+    from web_search_mcp.cache import MemoryTTLCache
+    from web_search_mcp.service import WebSearchService
+
+    svc = WebSearchService(
+        Settings(brave_api_key=""),
+        http=_BraveMediaHttp(),
+        cache=MemoryTTLCache(),  # type: ignore[arg-type]
+    )
+    hits, provider = await svc.search_media("videos", "q")
+    assert hits == [] and provider == ""
