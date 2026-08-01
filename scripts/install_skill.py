@@ -32,6 +32,8 @@ MCP_SETTINGS_FILES = [
     # Cline & Roo-Cline
     HOME / "Library" / "Application Support" / "Code" / "User" / "globalStorage" / "saoudrizwan.claude-dev" / "settings" / "cline_mcp_settings.json",
     HOME / "Library" / "Application Support" / "Code" / "User" / "globalStorage" / "rooveterinaryinc.roo-cline" / "settings" / "cline_mcp_settings.json",
+    HOME / ".cline" / "data" / "settings" / "cline_mcp_settings.json",
+    HOME / ".roo-cline" / "data" / "settings" / "cline_mcp_settings.json",
     HOME / ".cline" / "mcp_settings.json",
     HOME / ".cline" / "data" / "mcp_settings.json",
     HOME / ".roo-cline" / "mcp_settings.json",
