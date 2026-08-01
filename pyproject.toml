@@ -11,6 +11,9 @@ dependencies = [
     "ddgs>=9.0",
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
+    "pypdf>=4.0",
+    "aiosqlite>=0.20",
+    "html2text>=2024.2",
 ]
 
 [project.scripts]
