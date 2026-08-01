@@ -44,6 +44,19 @@ class BrowserRenderEngine:
                 )
                 page = await context.new_page()
 
+                # Ağır kaynakları (image/font/media) indirme: networkidle çok daha
+                # hızlı tetiklenir, bant genişliği ve süre tasarrufu sağlanır.
+                async def block_heavy_resources(route: Any) -> None:
+                    try:
+                        if route.request.resource_type in ("image", "font", "media"):
+                            await route.abort()
+                        else:
+                            await route.continue_()
+                    except Exception:
+                        pass
+
+                await page.route("**/*", block_heavy_resources)
+
                 # Intercept XHR / Fetch JSON responses
                 if capture_network:
 

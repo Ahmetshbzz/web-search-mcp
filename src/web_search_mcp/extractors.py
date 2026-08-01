@@ -57,6 +57,19 @@ def extract_pdf(data_bytes: bytes) -> str:
         return ""
 
 
+# Tek birleşik desen: HTML'i 9 kez taramak yerine tek geçişte tüm iletişim
+# bağlantılarını yakalar. Grup adları kategori dispatch'i için kullanılır.
+_CONTACT_RE = re.compile(
+    r"(?:wa\.me/|api\.whatsapp\.com/send\?phone=|whatsapp://send\?phone=)(?P<wa>\+?\d+)"
+    r"|href=[\"']tel:(?P<tel>[^\"']+)[\"']"
+    r"|href=[\"']mailto:(?P<mail>[^\"']+)[\"']"
+    r"|href=[\"'](?P<tg>https?://(?:t|telegram)\.me/[^\"']+)[\"']"
+    r"|href=[\"'](?P<social>https?://(?:www\.)?"
+    r"(?:github\.com|linkedin\.com/in|(?:twitter|x)\.com|instagram\.com)/[^\"']+)[\"']",
+    re.IGNORECASE,
+)
+
+
 def extract_contacts_and_socials(html: str) -> dict[str, list[str]]:
     """HTML içerisinden WhatsApp, telefon, e-posta ve sosyal medya bağlantılarını çıkarır."""
     if not html:
@@ -69,51 +82,26 @@ def extract_contacts_and_socials(html: str) -> dict[str, list[str]]:
         "telegram": [],
         "socials": [],
     }
+    seen: dict[str, set[str]] = {k: set() for k in contacts}
 
-    # WhatsApp links/numbers
-    wa_matches = re.findall(
-        r"(?:wa\.me/|api\.whatsapp\.com/send\?phone=|whatsapp://send\?phone=)(\+?\d+)",
-        html,
-        re.IGNORECASE,
-    )
-    for num in wa_matches:
-        formatted = "+" + num.lstrip("+")
-        if formatted not in contacts["whatsapp"]:
-            contacts["whatsapp"].append(formatted)
-
-    # Tel hrefs
-    tel_matches = re.findall(r'href=["\']tel:([^"\']+)["\']', html, re.IGNORECASE)
-    for tel in tel_matches:
-        t_clean = re.sub(r"[^\d+]", "", tel)
-        if t_clean and t_clean not in contacts["phone"]:
-            contacts["phone"].append(t_clean)
-
-    # Mailto hrefs
-    mail_matches = re.findall(r'href=["\']mailto:([^"\']+)["\']', html, re.IGNORECASE)
-    for mail in mail_matches:
-        m_clean = mail.split("?")[0].strip()
-        if m_clean and m_clean not in contacts["email"]:
-            contacts["email"].append(m_clean)
-
-    # Telegram
-    tg_matches = re.findall(
-        r'href=["\'](https?://(?:t|telegram)\.me/[^"\']+)["\']', html, re.IGNORECASE
-    )
-    for tg in tg_matches:
-        if tg not in contacts["telegram"]:
-            contacts["telegram"].append(tg)
-
-    # Socials
-    social_patterns = [
-        r'href=["\'](https?://(?:www\.)?github\.com/[^"\']+)["\']',
-        r'href=["\'](https?://(?:www\.)?linkedin\.com/in/[^"\']+)["\']',
-        r'href=["\'](https?://(?:www\.)?(?:twitter|x)\.com/[^"\']+)["\']',
-        r'href=["\'](https?://(?:www\.)?instagram\.com/[^"\']+)["\']',
-    ]
-    for pattern in social_patterns:
-        for match in re.findall(pattern, html, re.IGNORECASE):
-            if match not in contacts["socials"]:
-                contacts["socials"].append(match)
+    for match in _CONTACT_RE.finditer(html):
+        kind = match.lastgroup
+        if kind is None:
+            continue
+        value = match.group(kind)
+        if kind == "wa":
+            category, cleaned = "whatsapp", "+" + value.lstrip("+")
+        elif kind == "tel":
+            category, cleaned = "phone", re.sub(r"[^\d+]", "", value)
+        elif kind == "mail":
+            category, cleaned = "email", value.split("?")[0].strip()
+        elif kind == "tg":
+            category, cleaned = "telegram", value
+        else:
+            category, cleaned = "socials", value
+        if cleaned and cleaned not in seen[category]:
+            seen[category].add(cleaned)
+            contacts[category].append(cleaned)
 
     return {k: v for k, v in contacts.items() if v}
 
@@ -121,8 +109,13 @@ def extract_contacts_and_socials(html: str) -> dict[str, list[str]]:
 def extract_with_meta(
     html: str, url: str = "", output_format: Literal["text", "markdown"] = "text"
 ) -> tuple[str, str]:
-    """(temiz ana içerik, yayın tarihi 'YYYY-MM-DD' veya '')."""
+    """(temiz ana içerik, yayın tarihi 'YYYY-MM-DD' veya '').
+
+    Tek trafilatura JSON çağrısından hem metin hem tarih alınır; text formatında
+    ikinci bir trafilatura geçişi yapılmaz (lxml/regex fallback korunur).
+    """
     date = ""
+    json_text = ""
     try:
         raw = trafilatura.extract(
             html,
@@ -136,10 +129,16 @@ def extract_with_meta(
         if raw:
             data = json.loads(raw)
             date = (data.get("date") or "").strip()
+            json_text = (data.get("text") or "").strip()
     except Exception:
         pass
 
-    text = clean_extract_markdown(html) if output_format == "markdown" else clean_extract(html)
+    if output_format == "markdown":
+        text = clean_extract_markdown(html)
+    elif json_text:
+        text = re.sub(r"\n{3,}", "\n\n", json_text)
+    else:
+        text = clean_extract(html)
 
     # Append discovered contact and action links (WhatsApp, Phone, Email, Telegram, Socials)
     contacts = extract_contacts_and_socials(html)
@@ -158,6 +157,22 @@ def extract_with_meta(
         text += "\n".join(contact_lines)
 
     return text, date
+
+
+def _best_window(text: str, query_words: set[str], max_chars: int) -> str:
+    """Dev metin içinde sorgu kelimelerinin ilk geçtiği bölgeyi pencereler."""
+    if len(text) <= max_chars:
+        return text
+    lower = text.lower()
+    best_pos = -1
+    for w in query_words:
+        pos = lower.find(w)
+        if pos != -1 and (best_pos == -1 or pos < best_pos):
+            best_pos = pos
+    if best_pos == -1:
+        return text[:max_chars].rstrip()
+    start = max(0, best_pos - max_chars // 3)  # bağlam için biraz geriden başla
+    return text[start : start + max_chars].rstrip()
 
 
 def chunk_relevant_text(text: str, query: str, max_chars: int) -> str:
@@ -186,8 +201,13 @@ def chunk_relevant_text(text: str, query: str, max_chars: int) -> str:
     current_length = 0
 
     for _score, idx, p in scored_paragraphs:
-        if current_length + len(p) + 2 > max_chars and selected:
-            break
+        remaining = max_chars - current_length
+        if len(p) + 2 > remaining:
+            if selected:
+                break
+            # Tek dev paragraf (trafilatura çıktısı tipik): sorgu bölgesini
+            # pencereler, aksi halde max_chars hiç uygulanmaz → token kaçağı.
+            return _best_window(p, query_words, remaining)
         selected.append((idx, p))
         current_length += len(p) + 2
 

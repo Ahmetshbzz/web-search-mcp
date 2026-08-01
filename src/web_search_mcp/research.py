@@ -1,3 +1,4 @@
+import asyncio
 import re
 from urllib.parse import urlparse
 
@@ -35,37 +36,59 @@ class DeepResearchEngine:
         all_hits: list[SearchHit] = []
         visited_urls: set[str] = set()
 
-        # Step 2: Primary hop search across all sub-queries
-        for query in sub_queries:
-            hits, _ = await self.service.search(
-                query=query,
-                max_results=max_pages_per_hop,
-                fetch_pages=True,
-                output_format="markdown",
-            )
+        # Step 2: Primary hop - tüm sub-query'ler paralel aranır
+        search_results = await asyncio.gather(
+            *[
+                self.service.search(
+                    query=query,
+                    max_results=max_pages_per_hop,
+                    fetch_pages=True,
+                    output_format="markdown",
+                )
+                for query in sub_queries
+            ],
+            return_exceptions=True,
+        )
+        for res in search_results:
+            if isinstance(res, Exception):
+                _logger.debug("sub-query search failed", exc_info=res)
+                continue
+            hits, _ = res
             for hit in hits:
                 if hit.href not in visited_urls:
                     visited_urls.add(hit.href)
                     all_hits.append(hit)
 
-        # Step 3: Secondary hop - extract sub-links from top hits if depth > 1
+        # Step 3: Secondary hop - top hit'lerden çıkan sub-link'ler paralel fetch edilir
         secondary_hits: list[SearchHit] = []
         if depth > 1 and all_hits:
             sub_links = self._extract_sub_links(all_hits[:2])
-            for link in sub_links[:max_pages_per_hop]:
+            fresh_links: list[str] = []
+            for link in sub_links:
+                if len(fresh_links) >= max_pages_per_hop:
+                    break
                 if link not in visited_urls:
                     visited_urls.add(link)
-                    page = await self.service.fetch(link, output_format="markdown")
-                    if page.status == "ok" and page.text:
-                        domain = urlparse(link).netloc
-                        secondary_hits.append(
-                            SearchHit(
-                                title=f"Deep Hop Source: {domain}",
-                                href=link,
-                                body=page.text[:4000],
-                                label=f"{domain} · Hop 2",
-                            )
+                    fresh_links.append(link)
+
+            pages = await asyncio.gather(
+                *[self.service.fetch(link, output_format="markdown") for link in fresh_links],
+                return_exceptions=True,
+            )
+            for link, page in zip(fresh_links, pages, strict=False):
+                if isinstance(page, Exception):
+                    _logger.debug("secondary hop fetch failed for %s", link, exc_info=page)
+                    continue
+                if page.status == "ok" and page.text:
+                    domain = urlparse(link).netloc
+                    secondary_hits.append(
+                        SearchHit(
+                            title=f"Deep Hop Source: {domain}",
+                            href=link,
+                            body=page.text[:4000],
+                            label=f"{domain} · Hop 2",
                         )
+                    )
 
         # Step 4: Synthesize Research Dossier
         return self._format_research_dossier(topic, all_hits, secondary_hits)
