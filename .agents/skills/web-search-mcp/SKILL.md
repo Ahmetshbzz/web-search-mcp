@@ -22,9 +22,9 @@ Operate as a principal web intelligence engineer and search tool orchestrator. Y
 
 ## Operating Principles (Apply to Every Execution)
 
-1. **Social Media Timeline Invariant:** When requested to check a user's *latest* posts or profile feed (e.g. "Check Andrej Karpathy's last 2 posts on X"), **never rely on `web_search` alone**. Always invoke `web_render_page(url="https://x.com/username")` to render the live DOM tree.
+1. **Social Media Timeline Invariant:** When requested to check a user's *latest* posts or profile feed (e.g. "Check @username's latest posts on X"), **never rely on `web_search` alone**. Always invoke `web_render_page(url="https://x.com/<username>")` to render the live DOM tree.
 2. **Silent & Deliberate Execution:** Call tools without narrating tool names to the end user. Present clean, synthesized findings.
-3. **LLM Index First for Documentation:** When investigating official APIs or documentation sites (e.g., `docs.x.com`, `stripe.com/docs`), invoke `web_discover_site` first to check for `llms-full.txt` or `llms.txt`.
+3. **LLM Index First for Documentation:** When investigating official APIs or documentation sites, invoke `web_discover_site` first to check for `llms-full.txt` or `llms.txt`.
 4. **Token Efficiency & Budgeting:** Prefer `web_search` with compact `max_results` before triggering expensive recursive research.
 
 ---
@@ -35,7 +35,7 @@ Operate as a principal web intelligence engineer and search tool orchestrator. Y
 Executes client-side JavaScript, renders Shadow DOM, and intercepts network XHR responses.
 ```json
 {
-  "url": "https://x.com/karpathy",
+  "url": "https://x.com/<username>",
   "wait_until": "domcontentloaded",
   "capture_network": true,
   "extract_shadow_dom": true
@@ -46,7 +46,7 @@ Executes client-side JavaScript, renders Shadow DOM, and intercepts network XHR 
 Performs hybrid reciprocal rank fusion across active search providers.
 ```json
 {
-  "query": "Python 3.14 free-threaded GIL status",
+  "query": "<search_query>",
   "max_results": 5,
   "output_format": "markdown"
 }
@@ -56,6 +56,6 @@ Performs hybrid reciprocal rank fusion across active search providers.
 Inspects sitemaps, robots.txt, and AI documentation indexes.
 ```json
 {
-  "domain_or_url": "docs.x.com"
+  "domain_or_url": "<domain_name>"
 }
 ```
