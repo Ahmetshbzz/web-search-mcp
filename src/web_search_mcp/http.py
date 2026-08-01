@@ -51,34 +51,37 @@ class Http:
             await self._curl_session.close()
         self._curl_session = None
 
-    async def get_text(self, url: str, request_timeout: float) -> str | None:
+    async def get_text(
+        self, url: str, request_timeout: float, headers: dict[str, str] | None = None
+    ) -> str | None:
         # First try curl_cffi with Chrome TLS impersonation to bypass Cloudflare/WAF
         try:
-            resp = await self.curl_session.get(url, timeout=request_timeout)
+            resp = await self.curl_session.get(url, headers=headers, timeout=request_timeout)
             if resp.status_code == 200 and resp.text:
                 return resp.text
         except Exception:
-            # pyrefly: ignore [unexpected-keyword]
-            _logger.debug("curl_cffi fetch failed, falling back to httpx", url=url)
+            _logger.debug("curl_cffi fetch failed, falling back to httpx for url %s", url)
 
         # Fallback to httpx
         try:
-            resp = await self.client.get(url, timeout=request_timeout)
+            resp = await self.client.get(url, headers=headers, timeout=request_timeout)
             if resp.status_code == 200:
                 return resp.text
         except Exception:
             pass
         return None
 
-    async def get_bytes(self, url: str, request_timeout: float) -> bytes | None:
+    async def get_bytes(
+        self, url: str, request_timeout: float, headers: dict[str, str] | None = None
+    ) -> bytes | None:
         try:
-            resp = await self.curl_session.get(url, timeout=request_timeout)
+            resp = await self.curl_session.get(url, headers=headers, timeout=request_timeout)
             if resp.status_code == 200 and resp.content:
                 return resp.content
         except Exception:
             pass
         try:
-            resp = await self.client.get(url, timeout=request_timeout)
+            resp = await self.client.get(url, headers=headers, timeout=request_timeout)
             if resp.status_code == 200:
                 return resp.content
         except Exception:
