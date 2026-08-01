@@ -1,5 +1,7 @@
 import io
+
 import pypdf
+
 from web_search_mcp.extractors import (
     chunk_relevant_text,
     clean_extract_markdown,

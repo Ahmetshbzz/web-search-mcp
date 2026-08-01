@@ -63,9 +63,7 @@ class WebSearchService:
 
         # Filter by domain
         results = [
-            r
-            for r in results
-            if matches_domain_filter(r.href, include_domains, exclude_domains)
+            r for r in results if matches_domain_filter(r.href, include_domains, exclude_domains)
         ]
         if not results:
             return [], provider
@@ -97,9 +95,7 @@ class WebSearchService:
                 )
 
             if page_text:
-                page_text = chunk_relevant_text(
-                    page_text, query, self.settings.max_content_chars
-                )
+                page_text = chunk_relevant_text(page_text, query, self.settings.max_content_chars)
 
             enriched.append(
                 EnrichedResult(
@@ -174,16 +170,13 @@ class WebSearchService:
     ) -> tuple[list[ProviderResult], str]:
         key = f"{query}|{max_results}|{recency or ''}|{search_mode}"
         cached = await self.cache.get(key)
-        if cached is not None:
-            if isinstance(cached, (list, tuple)) and len(cached) == 2:
-                raw_results, provider = cached
-                results = [ProviderResult.model_validate(r) for r in raw_results]
-                return results, provider
+        if cached is not None and isinstance(cached, (list, tuple)) and len(cached) == 2:
+            raw_results, provider = cached
+            results = [ProviderResult.model_validate(r) for r in raw_results]
+            return results, provider
 
         if search_mode == "parallel":
-            results, provider = await search_parallel(
-                self._providers, query, max_results, recency
-            )
+            results, provider = await search_parallel(self._providers, query, max_results, recency)
         else:
             results, provider = await search_with_fallback(
                 self._providers, query, max_results, recency

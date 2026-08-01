@@ -8,8 +8,7 @@ def test_hostname_strips_www():
 
 def test_clean_url_drops_tracking():
     assert (
-        clean_url("https://site.com/a?utm_source=x&gclid=z&keep=1")
-        == "https://site.com/a?keep=1"
+        clean_url("https://site.com/a?utm_source=x&gclid=z&keep=1") == "https://site.com/a?keep=1"
     )
     assert clean_url("https://site.com/b?fbclid=abc&pk_campaign=news") == "https://site.com/b"
 

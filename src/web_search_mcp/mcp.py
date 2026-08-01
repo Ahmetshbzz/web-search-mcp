@@ -2,15 +2,19 @@ import json
 from typing import Literal
 
 from mcp.server.mcpserver import MCPServer
-from mcp.types import Prompt, PromptMessage, TextContent, ToolAnnotations
+from mcp.types import PromptMessage, TextContent, ToolAnnotations
 
 from web_search_mcp.config import get_settings
 from web_search_mcp.models import SearchHit
+from web_search_mcp.research import DeepResearchEngine
 from web_search_mcp.service import WebSearchService
+from web_search_mcp.structured import StructuredExtractor
 from web_search_mcp.text import truncate
 from web_search_mcp.urls import hostname
 
 _service: WebSearchService | None = None
+_research_engine: DeepResearchEngine | None = None
+_structured_extractor: StructuredExtractor | None = None
 
 
 def get_service() -> WebSearchService:
@@ -20,12 +24,27 @@ def get_service() -> WebSearchService:
     return _service
 
 
+def get_research_engine() -> DeepResearchEngine:
+    global _research_engine
+    if _research_engine is None:
+        _research_engine = DeepResearchEngine(get_service())
+    return _research_engine
+
+
+def get_structured_extractor() -> StructuredExtractor:
+    global _structured_extractor
+    if _structured_extractor is None:
+        _structured_extractor = StructuredExtractor(get_service())
+    return _structured_extractor
+
+
 mcp = MCPServer(
     name="web-search",
-    version="1.2.0",
+    version="2.0.0",
     instructions=(
-        "Web search and fetch server with multi-provider parallel aggregation, domain filtering, "
-        "Markdown/PDF extraction, and SQLite caching. Use web_search for queries and web_fetch for direct URLs."
+        "Web search & intelligence server with multi-provider parallel aggregation, "
+        "Chrome TLS fingerprinting, autonomous multi-hop deep research, structured "
+        "JSON data extraction, Markdown/PDF extraction, and SQLite caching."
     ),
 )
 
@@ -48,8 +67,8 @@ def _format_sources(sources: list[SearchHit], provider: str) -> str:
     name="web_search",
     title="Web Search",
     description=(
-        "Search the web and return cleaned, ready-to-read results. Supports parallel search across "
-        "Brave, Tavily, Exa, SearXNG, and DDG with automatic deduplication, reranking, and domain filtering."
+        "Search the web and return cleaned results. Supports parallel search across "
+        "Brave, Tavily, Exa, SearXNG, and DDG with deduplication and domain filtering."
     ),
     annotations=ToolAnnotations(
         readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
@@ -85,16 +104,13 @@ async def web_search(
     name="web_fetch",
     title="Web Fetch",
     description=(
-        "Fetch a URL (HTML or PDF) and return clean main text or Markdown content plus publish date. "
-        "Local and private network targets are blocked."
+        "Fetch a URL (HTML/PDF) using Chrome TLS impersonation and return clean text or Markdown."
     ),
     annotations=ToolAnnotations(
         readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
     ),
 )
-async def web_fetch(
-    url: str, output_format: Literal["text", "markdown"] = "text"
-) -> str:
+async def web_fetch(url: str, output_format: Literal["text", "markdown"] = "text") -> str:
     """Fetch one URL and extract its main content (text or markdown)."""
     page = await get_service().fetch(url, output_format=output_format)
     if page.status == "blocked":
@@ -105,6 +121,40 @@ async def web_fetch(
         return f"Fetched but no readable content found: {url}"
     header = f"Source: {hostname(url)}" + (f" · {page.date}" if page.date else "")
     return f"{header}\n\n{truncate(page.text, get_settings().max_content_chars)}"
+
+
+@mcp.tool(
+    name="web_deep_research",
+    title="Web Deep Research Engine",
+    description=(
+        "Execute an autonomous multi-hop deep research investigation on a topic. "
+        "Formulates sub-queries, navigates sub-links, extracts Markdown, and synthesizes a dossier."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
+    ),
+)
+async def web_deep_research(topic: str, depth: int = 2) -> str:
+    """Perform autonomous multi-hop deep research on a topic."""
+    return await get_research_engine().execute_research(topic=topic, depth=depth)
+
+
+@mcp.tool(
+    name="web_extract_structured",
+    title="Structured JSON Data Extractor",
+    description=(
+        "Fetch a web page and extract structured JSON objects matching a specified schema."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
+    ),
+)
+async def web_extract_structured(url: str, schema_description: str) -> str:
+    """Extract structured JSON objects from a web page."""
+    data = await get_structured_extractor().extract_structured_data(
+        url=url, schema_description=schema_description
+    )
+    return json.dumps(data, indent=2)
 
 
 @mcp.resource(uri="search://cache/list", name="Cached Query Keys")
@@ -127,7 +177,7 @@ def prompt_deep_research(topic: str) -> list[PromptMessage]:
                 text=(
                     f"Please perform a deep, comprehensive research on '{topic}'.\n"
                     "1. Break the topic down into 3 targeted web_search queries.\n"
-                    "2. Fetch full pages for the top relevant sources using web_fetch in markdown format.\n"
+                    "2. Fetch full pages for top sources using web_fetch in markdown.\n"
                     "3. Synthesize a detailed summary with citations."
                 ),
             ),
@@ -135,7 +185,9 @@ def prompt_deep_research(topic: str) -> list[PromptMessage]:
     ]
 
 
-@mcp.prompt(name="tech-version-check", description="Check current versions of software or libraries.")
+@mcp.prompt(
+    name="tech-version-check", description="Check current versions of software or libraries."
+)
 def prompt_tech_version_check(library: str) -> list[PromptMessage]:
     return [
         PromptMessage(

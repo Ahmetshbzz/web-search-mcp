@@ -1,4 +1,5 @@
 import pytest
+
 from web_search_mcp.cache import SQLiteTTLCache
 
 

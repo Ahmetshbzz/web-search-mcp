@@ -1,4 +1,3 @@
-import pytest
 from web_search_mcp.config import Settings
 from web_search_mcp.http import Http
 from web_search_mcp.providers.exa import ExaProvider

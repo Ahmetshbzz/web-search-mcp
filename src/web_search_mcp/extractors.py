@@ -78,11 +78,7 @@ def extract_with_meta(
     except Exception:
         pass
 
-    if output_format == "markdown":
-        text = clean_extract_markdown(html)
-    else:
-        text = clean_extract(html)
-
+    text = clean_extract_markdown(html) if output_format == "markdown" else clean_extract(html)
     return text, date
 
 
@@ -111,7 +107,7 @@ def chunk_relevant_text(text: str, query: str, max_chars: int) -> str:
     selected: list[tuple[int, str]] = []
     current_length = 0
 
-    for score, idx, p in scored_paragraphs:
+    for _score, idx, p in scored_paragraphs:
         if current_length + len(p) + 2 > max_chars and selected:
             break
         selected.append((idx, p))

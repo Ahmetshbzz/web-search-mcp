@@ -7,10 +7,32 @@ _PRIVATE_HOST_RE = re.compile(
 
 _TRACKING_PARAMS = frozenset(
     {
-        "fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "twclid",
-        "yclid", "igshid", "li_fat_id", "_ga", "_gl", "_hsenc", "_hsmi",
-        "mc_cid", "mc_eid", "ref_src", "ref_url", "srsltid", "source",
-        "spm", "si", "scid", "cmpid", "share_token", "utm_*",
+        "fbclid",
+        "gclid",
+        "dclid",
+        "gbraid",
+        "wbraid",
+        "msclkid",
+        "twclid",
+        "yclid",
+        "igshid",
+        "li_fat_id",
+        "_ga",
+        "_gl",
+        "_hsenc",
+        "_hsmi",
+        "mc_cid",
+        "mc_eid",
+        "ref_src",
+        "ref_url",
+        "srsltid",
+        "source",
+        "spm",
+        "si",
+        "scid",
+        "cmpid",
+        "share_token",
+        "utm_*",
     }
 )
 

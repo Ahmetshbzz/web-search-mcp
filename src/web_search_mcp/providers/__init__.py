@@ -50,7 +50,9 @@ async def _execute_provider(
     except Exception:
         cb.record_failure()
         # pyrefly: ignore [unexpected-keyword]
-        _logger.debug("Provider failed during search execution", provider=provider.name, exc_info=True)
+        _logger.debug(
+            "Provider failed during search execution", provider=provider.name, exc_info=True
+        )
         return [], provider.name
 
 

@@ -1,4 +1,5 @@
 import time
+
 from web_search_mcp.circuit_breaker import CircuitBreaker, CircuitState
 
 

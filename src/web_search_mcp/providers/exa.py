@@ -22,7 +22,7 @@ class ExaProvider(SearchProvider):
             "type": "auto",
         }
         data = await self.http.post_json(
-            url, headers=headers, json_data=payload, timeout=self.settings.search_timeout
+            url, headers=headers, json_data=payload, request_timeout=self.settings.search_timeout
         )
         if not data or not isinstance(data, dict):
             return []

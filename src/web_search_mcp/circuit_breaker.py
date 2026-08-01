@@ -6,7 +6,7 @@ from web_search_mcp.observability import get_logger
 logger = get_logger(__name__)
 
 
-class CircuitState(str, Enum):
+class CircuitState(Enum):
     CLOSED = "CLOSED"
     OPEN = "OPEN"
     HALF_OPEN = "HALF_OPEN"
@@ -39,7 +39,9 @@ class CircuitBreaker:
 
     def record_success(self) -> None:
         if self.state != CircuitState.CLOSED:
-            logger.info("Circuit breaker closed after successful execution for provider %s", self.name)
+            logger.info(
+                "Circuit breaker closed after successful execution for provider %s", self.name
+            )
         self.failure_count = 0
         self.state = CircuitState.CLOSED
         self.last_state_change = time.time()

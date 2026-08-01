@@ -1,5 +1,4 @@
 import json
-import sqlite3
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -47,22 +46,22 @@ class SQLiteTTLCache(TTLCache):
     async def get(self, key: str) -> Any | None:
         await self._init_db()
         now = time.time()
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                "SELECT value, expires_at FROM cache WHERE key = ?", (key,)
-            ) as cursor:
-                row = await cursor.fetchone()
-                if not row:
-                    return None
-                val_json, expires_at = row
-                if now > expires_at:
-                    await db.execute("DELETE FROM cache WHERE key = ?", (key,))
-                    await db.commit()
-                    return None
-                try:
-                    return json.loads(val_json)
-                except Exception:
-                    return None
+        async with (
+            aiosqlite.connect(self.db_path) as db,
+            db.execute("SELECT value, expires_at FROM cache WHERE key = ?", (key,)) as cursor,
+        ):
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            val_json, expires_at = row
+            if now > expires_at:
+                await db.execute("DELETE FROM cache WHERE key = ?", (key,))
+                await db.commit()
+                return None
+            try:
+                return json.loads(val_json)
+            except Exception:
+                return None
 
     async def set(self, key: str, value: Any, ttl_seconds: int) -> None:
         await self._init_db()
@@ -82,12 +81,12 @@ class SQLiteTTLCache(TTLCache):
     async def list_keys(self) -> list[str]:
         await self._init_db()
         now = time.time()
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                "SELECT key FROM cache WHERE expires_at > ?", (now,)
-            ) as cursor:
-                rows = await cursor.fetchall()
-                return [row[0] for row in rows]
+        async with (
+            aiosqlite.connect(self.db_path) as db,
+            db.execute("SELECT key FROM cache WHERE expires_at > ?", (now,)) as cursor,
+        ):
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows]
 
 
 class MemoryTTLCache(TTLCache):
@@ -110,4 +109,3 @@ class MemoryTTLCache(TTLCache):
     async def list_keys(self) -> list[str]:
         now = time.time()
         return [k for k, (exp, _) in self._items.items() if exp > now]
-

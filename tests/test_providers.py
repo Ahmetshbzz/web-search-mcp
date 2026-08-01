@@ -95,9 +95,7 @@ class OkProvider:
 
 
 async def test_fallback_tries_next_provider():
-    results, provider = await search_with_fallback(
-        [FailProvider(), OkProvider()], "q", 5, None
-    )
+    results, provider = await search_with_fallback([FailProvider(), OkProvider()], "q", 5, None)
     assert provider == "ok"
     assert len(results) == 1
 
