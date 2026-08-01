@@ -122,3 +122,61 @@ async def test_fallback_returns_empty_when_all_fail():
     results, provider = await search_with_fallback([FailProvider()], "q", 5, None)
     assert results == []
     assert provider == ""
+
+
+class _BraveRoutingHttp:
+    """news/web endpoint'lerini ayırt eden fake."""
+
+    def __init__(self, fail_news: bool = False):
+        self.urls: list[str] = []
+        self.fail_news = fail_news
+
+    async def get_json(self, url: str, **kwargs: object) -> object:
+        self.urls.append(url)
+        if "news/search" in url:
+            if self.fail_news:
+                raise RuntimeError("news endpoint not subscribed")
+            return {
+                "results": [
+                    {
+                        "title": "Breaking News",
+                        "url": "https://news.com/1",
+                        "description": "fresh",
+                        "age": "2 hours ago",
+                    }
+                ]
+            }
+        return {
+            "web": {
+                "results": [{"title": "Web Result", "url": "https://web.com/1", "description": "d"}]
+            }
+        }
+
+
+async def test_brave_recency_fires_news_and_web():
+    http = _BraveRoutingHttp()
+    provider = BraveProvider(Settings(brave_api_key="k"), http)  # type: ignore[arg-type]
+    rows = await provider.search("q", max_results=5, recency="day")
+
+    kinds = {"news" if "news/search" in u else "web" for u in http.urls}
+    assert kinds == {"news", "web"}
+    assert rows[0].title == "Breaking News"  # haber önce gelir
+    assert rows[0].date != ""  # '2 hours ago' normalize edildi
+    assert any(r.title == "Web Result" for r in rows)
+
+
+async def test_brave_no_recency_web_only():
+    http = _BraveRoutingHttp()
+    provider = BraveProvider(Settings(brave_api_key="k"), http)  # type: ignore[arg-type]
+    rows = await provider.search("q", max_results=5, recency=None)
+
+    assert all("news/search" not in u for u in http.urls)
+    assert [r.title for r in rows] == ["Web Result"]
+
+
+async def test_brave_news_failure_falls_back_to_web():
+    http = _BraveRoutingHttp(fail_news=True)
+    provider = BraveProvider(Settings(brave_api_key="k"), http)  # type: ignore[arg-type]
+    rows = await provider.search("q", max_results=5, recency="day")
+
+    assert [r.title for r in rows] == ["Web Result"]
