@@ -180,7 +180,11 @@ async def web_search_media(
     max_results: int = 8,
 ) -> str:
     """Search videos or images on Brave."""
-    hits, provider = await get_service().search_media(media_type, query, max_results)
+    try:
+        hits, provider = await get_service().search_media(media_type, query, max_results)
+    except Exception as exc:
+        # 429/geçici provider hataları ham traceback olarak sızmasın
+        return f"Media search failed (retry önerilir): {exc}"
     if not hits:
         return "No media results found (Brave API key with media plan required)."
     return _format_sources(hits, provider)

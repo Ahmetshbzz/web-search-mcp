@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     provider_timeout: float = 14.0  # tek provider'ın hard limiti (parallel/fast modda)
     fetch_timeout: float = 8.0
     page_timeout: float = 15.0
-    max_retries: int = 1
+    max_retries: int = 2  # 429/geçici hatalara karşı 1 retry (0.5s backoff)
 
     user_agent: str = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "

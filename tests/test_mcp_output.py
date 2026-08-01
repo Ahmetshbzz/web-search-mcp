@@ -48,3 +48,14 @@ def test_main_stdio_default(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["web-search-mcp"])
     mcp_module.main()
     assert calls == {"transport": "stdio"}
+
+
+@pytest.mark.asyncio
+async def test_web_search_media_graceful_failure(monkeypatch):
+    class FailSvc:
+        async def search_media(self, media_type, query, max_results=8):
+            raise RuntimeError("429 Too Many Requests")
+
+    monkeypatch.setattr(mcp_module, "get_service", lambda: FailSvc())
+    out = await mcp_module.web_search_media("q", media_type="images")
+    assert "Media search failed" in out  # ham traceback sizmiyor
