@@ -4,6 +4,7 @@ from typing import Literal
 from mcp.server.mcpserver import MCPServer
 from mcp.types import PromptMessage, TextContent, ToolAnnotations
 
+from web_search_mcp.browser_render import BrowserRenderEngine
 from web_search_mcp.config import get_settings
 from web_search_mcp.models import SearchHit
 from web_search_mcp.research import DeepResearchEngine
@@ -17,6 +18,7 @@ _service: WebSearchService | None = None
 _research_engine: DeepResearchEngine | None = None
 _structured_extractor: StructuredExtractor | None = None
 _site_discovery_engine: SiteDiscoveryEngine | None = None
+_browser_render_engine: BrowserRenderEngine | None = None
 
 
 def get_service() -> WebSearchService:
@@ -47,14 +49,22 @@ def get_site_discovery_engine() -> SiteDiscoveryEngine:
     return _site_discovery_engine
 
 
+def get_browser_render_engine() -> BrowserRenderEngine:
+    global _browser_render_engine
+    if _browser_render_engine is None:
+        _browser_render_engine = BrowserRenderEngine()
+    return _browser_render_engine
+
+
 mcp = MCPServer(
     name="web-search",
-    version="2.1.0",
+    version="2.2.0",
     instructions=(
         "Web search & intelligence server with multi-provider parallel aggregation, "
         "Chrome TLS fingerprinting, autonomous multi-hop deep research, structured "
-        "JSON data extraction, site discovery (robots.txt, sitemap.xml, llms.txt), "
-        "Markdown/PDF extraction, and SQLite caching."
+        "JSON data extraction, headless browser rendering (Playwright/Shadow DOM/Network), "
+        "site discovery (robots.txt, sitemap.xml, llms.txt), Markdown/PDF extraction, "
+        "and SQLite caching."
     ),
 )
 
@@ -146,6 +156,33 @@ async def web_fetch(url: str, output_format: Literal["text", "markdown"] = "text
 async def web_discover_site(url_or_domain: str) -> str:
     """Discover site metadata: robots.txt, sitemap.xml, and llms.txt."""
     data = await get_site_discovery_engine().discover(url_or_domain)
+    return json.dumps(data, indent=2)
+
+
+@mcp.tool(
+    name="web_render_page",
+    title="Headless Browser Page Renderer",
+    description=(
+        "Render a web page using headless Chromium (Playwright). Extracts full JS DOM, "
+        "Shadow DOM text, WhatsApp/contacts, and intercepts XHR/GraphQL JSON responses."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
+    ),
+)
+async def web_render_page(
+    url: str,
+    wait_until: Literal["load", "domcontentloaded", "networkidle"] = "networkidle",
+    capture_network: bool = True,
+    extract_shadow_dom: bool = True,
+) -> str:
+    """Render page with headless Chromium browser."""
+    data = await get_browser_render_engine().render_page(
+        url=url,
+        wait_until=wait_until,
+        capture_network=capture_network,
+        extract_shadow_dom=extract_shadow_dom,
+    )
     return json.dumps(data, indent=2)
 
 
