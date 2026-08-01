@@ -25,8 +25,15 @@ class FakeHttp:
         return "<html><body><p>hello content</p></body></html>"
 
 
+from web_search_mcp.cache import MemoryTTLCache
+
+
 def _service(http: FakeHttp) -> WebSearchService:
-    return WebSearchService(Settings(brave_api_key="k"), http=http)
+    return WebSearchService(
+        Settings(brave_api_key="k", tavily_api_key="", exa_api_key="", searxng_base_url="", search_mode="fallback"),
+        http=http,
+        cache=MemoryTTLCache(),
+    )
 
 
 async def test_search_dedups_hosts():
