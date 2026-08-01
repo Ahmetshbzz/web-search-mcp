@@ -251,3 +251,27 @@ async def test_search_fast_falls_back_when_all_niche():
 
     assert name == "arxiv_like"
     assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_http_fallback_when_https_fails():
+    """HTTPS upgrade basarisiz olursa orijinal http'ye dusulmeli (thinkbroadband vakasi)."""
+
+    class HttpsFailHttp:
+        async def get_document(self, url: str, request_timeout: float, **kwargs: object):
+            if url.startswith("https://"):
+                return None
+            return DocumentResult(
+                content="<html><body><p>plain http works</p></body></html>",
+                final_url=url,
+                content_type="text/html",
+                status_code=200,
+            )
+
+        async def get_json(self, url: str, **kwargs: object) -> object:
+            return {"web": {"results": []}}
+
+    service = _service(HttpsFailHttp())
+    page = await service.fetch("http://legacy.example.com/page")
+    assert page.status == "ok"
+    assert "plain http works" in page.text

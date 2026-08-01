@@ -160,13 +160,18 @@ class WebSearchService:
         self, url: str, output_format: Literal["text", "markdown"] = "text"
     ) -> FetchPage:
         url = clean_url(url.strip())
-        # HTTPS upgrade (Lexa parity): http:// verildiyse https:// dene
-        if url.startswith("http://"):
+        # HTTPS upgrade (Lexa parity): http:// verildiyse önce https:// dene
+        upgraded = url.startswith("http://")
+        if upgraded:
             url = "https://" + url[len("http://") :]
         if not is_fetchable(url):
             return FetchPage(status="blocked")
 
         page = await self._get_page_content(url, output_format, self.settings.page_timeout)
+        if page is None and upgraded:
+            # Host HTTPS konuşmuyor olabilir (thinkbroadband vakası) → http'ye düş
+            http_url = "http://" + url[len("https://") :]
+            page = await self._get_page_content(http_url, output_format, self.settings.page_timeout)
         if page is None:
             return FetchPage(status="unreachable")
         if page.kind != "ok":
